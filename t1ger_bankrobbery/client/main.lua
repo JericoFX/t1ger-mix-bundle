@@ -127,7 +127,7 @@ Citizen.CreateThread(function()
     end
 end)
 
----TODO: Add Zones
+---TODO: Add ox_target
 -- Bank Thread:
 Citizen.CreateThread(function()
 	while true do

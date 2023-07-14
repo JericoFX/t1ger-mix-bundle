@@ -1,15 +1,21 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
+--- TODO simplify the code.
+--- Add Zones.
+--- Try to make compatible with both framework and standalone
+--- Change everithyng to ox
 
-local player, coords = nil, {}
-Citizen.CreateThread(function()
-    while true do
-        player = PlayerPedId()
-        coords = GetEntityCoords(player)
-        Citizen.Wait(500)
-    end
-end)
+
+
+local player, coords = cache.ped, cache.coords
+-- Citizen.CreateThread(function()
+--     while true do
+--         player = PlayerPedId()
+--         coords = GetEntityCoords(player)
+--         Citizen.Wait(500)
+--     end
+-- end)
 
 local online_cops = 0
 local curBank = 0
@@ -19,6 +25,7 @@ local powerBox_timer, powerBox_player = 0, false
 local pacificSafe = {}
 local interacting = false
 
+---Change this function to Zones
 Citizen.CreateThread(function()
     while true do 
         for i = 1, #Config.Banks do
@@ -29,60 +36,53 @@ Citizen.CreateThread(function()
         Citizen.Wait(2000)
     end
 end)
-
-RegisterNetEvent('t1ger_bankrobbery:updateConfigCL')
-AddEventHandler('t1ger_bankrobbery:updateConfigCL', function(id, data)
+---···········¿Handle this on the server?·································
+RegisterNetEvent('t1ger_bankrobbery:updateConfigCL', function(id, data)
 	Config.Banks[id] = data
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:inUseCL')
-AddEventHandler('t1ger_bankrobbery:inUseCL', function(id, state)
+RegisterNetEvent('t1ger_bankrobbery:inUseCL', function(id, state)
 	Config.Banks[id].inUse = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:keypadHackedCL')
-AddEventHandler('t1ger_bankrobbery:keypadHackedCL', function(id, num, state)
+RegisterNetEvent('t1ger_bankrobbery:keypadHackedCL', function(id, num, state)
 	Config.Banks[id].keypads[num].hacked = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:doorFreezeCL')
-AddEventHandler('t1ger_bankrobbery:doorFreezeCL', function(id, num, state)
+RegisterNetEvent('t1ger_bankrobbery:doorFreezeCL', function(id, num, state)
 	Config.Banks[id].doors[num].freeze = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:safeRobbedCL')
-AddEventHandler('t1ger_bankrobbery:safeRobbedCL', function(id, num, state)
+RegisterNetEvent('t1ger_bankrobbery:safeRobbedCL', function(id, num, state)
 	Config.Banks[id].safes[num].robbed = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:safeFailedCL')
-AddEventHandler('t1ger_bankrobbery:safeFailedCL', function(id, num, state)
+RegisterNetEvent('t1ger_bankrobbery:safeFailedCL', function(id, num, state)
 	Config.Banks[id].safes[num].failed = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:powerBoxDisabledCL')
-AddEventHandler('t1ger_bankrobbery:powerBoxDisabledCL', function(id, state)
+RegisterNetEvent('t1ger_bankrobbery:powerBoxDisabledCL', function(id, state)
 	Config.Banks[id].powerBox.disabled = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:pettyCashRobbedCL')
-AddEventHandler('t1ger_bankrobbery:pettyCashRobbedCL', function(id, num, state)
+RegisterNetEvent('t1ger_bankrobbery:pettyCashRobbedCL', function(id, num, state)
     Config.Banks[id].pettyCash[num].robbed = state
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:safeCrackedCL')
-AddEventHandler('t1ger_bankrobbery:safeCrackedCL', function(id, state)
+RegisterNetEvent('t1ger_bankrobbery:safeCrackedCL', function(id, state)
 	Config.Banks[id].crackSafe.cracked = state
 end)
-
-RegisterNetEvent('t1ger_bankrobbery:updateOnlineCops')
-AddEventHandler('t1ger_bankrobbery:updateOnlineCops', function(count)
+--······································································
+--- Handle this on the server
+RegisterNetEvent('t1ger_bankrobbery:updateOnlineCops', function(count)
 	online_cops = count
     if Config.Debug == true then 
         online_cops = 5
     end
 end)
 
+
+--- TODO: Use native to handle doors
 -- Manage & Freeze Doors:
 Citizen.CreateThread(function()
     while true do 
@@ -127,6 +127,7 @@ Citizen.CreateThread(function()
     end
 end)
 
+---TODO: Add Zones
 -- Bank Thread:
 Citizen.CreateThread(function()
 	while true do
@@ -624,6 +625,7 @@ function DisablePowerBox()
     interacting = false
 end
 
+---TODO: Maybe a cron to handle time and handle this on the server?
 -- Thread to handle free robbing time:
 Citizen.CreateThread(function()
 	while true do
@@ -865,8 +867,7 @@ AddEventHandler('t1ger_bankrobbery:openVaultCL', function(open, id)
     end
 end)
 
-RegisterNetEvent('t1ger_bankrobbery:vaultSound')
-AddEventHandler('t1ger_bankrobbery:vaultSound', function(pos, count)
+RegisterNetEvent('t1ger_bankrobbery:vaultSound', function(pos, count)
     if #(coords - pos) <= 10.0 then
         local newCount = count*0.015
         for i = 1, newCount, 1 do 
@@ -877,20 +878,17 @@ AddEventHandler('t1ger_bankrobbery:vaultSound', function(pos, count)
 end)
 
 -- Event to sync vault heading:
-RegisterNetEvent('t1ger_bankrobbery:setHeadingCL')
-AddEventHandler('t1ger_bankrobbery:setHeadingCL', function(id, type, heading)
+RegisterNetEvent('t1ger_bankrobbery:setHeadingCL', function(id, type, heading)
 	Config.Banks[id].doors[type].setHeading = heading
 end)
 
 -- Event to update powerbox timer:
-RegisterNetEvent('t1ger_bankrobbery:syncPowerBoxCL')
-AddEventHandler('t1ger_bankrobbery:syncPowerBoxCL', function(timer)
+RegisterNetEvent('t1ger_bankrobbery:syncPowerBoxCL', function(timer)
 	powerBox_timer = timer
 end)
 
 -- Create Pacific Crack Safe:
-RegisterNetEvent('t1ger_bankrobbery:createSafe')
-AddEventHandler('t1ger_bankrobbery:createSafe', function()
+RegisterNetEvent('t1ger_bankrobbery:createSafe', function()
     local cfg = Config.Banks[curBank].crackSafe
     local hashkey = GetHashKey(cfg.model) % 0x100000000
     T1GER_LoadModel(hashkey)
@@ -921,8 +919,7 @@ RegisterCommand('camera', function(source, args, rawCommand)
     end
 end, false)
 
-RegisterNetEvent('t1ger_bankrobbery:camera')
-AddEventHandler('t1ger_bankrobbery:camera', function(cameraNum)
+RegisterNetEvent('t1ger_bankrobbery:camera', function(cameraNum)
 	local player = GetPlayerPed(-1)
 	if usingCamera then
 		usingCamera = false
@@ -952,8 +949,7 @@ AddEventHandler('t1ger_bankrobbery:camera', function(cameraNum)
 end)
 
 -- Camera VIew:
-RegisterNetEvent('t1ger_bankrobbery:openCameraView')
-AddEventHandler('t1ger_bankrobbery:openCameraView', function(cameraNum)
+RegisterNetEvent('t1ger_bankrobbery:openCameraView', function(cameraNum)
 	local player = GetPlayerPed(-1)
 	local curCam = Config.Camera[cameraNum]
 	local x,y,z,heading = curCam.pos[1],curCam.pos[2],curCam.pos[3],curCam.heading

@@ -20,6 +20,8 @@ client_scripts {
 	'client/utils.lua'
 }
 
+shared_script "ox_lib/init.lua"
+
 server_scripts {
 	'@mysql-async/lib/MySQL.lua',
 	'language.lua',

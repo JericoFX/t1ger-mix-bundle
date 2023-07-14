@@ -35,82 +35,69 @@ Citizen.CreateThread(function()
 end)
 
 -- Update Pacific Config:
-RegisterServerEvent('t1ger_bankrobbery:updateConfigSV')
-AddEventHandler('t1ger_bankrobbery:updateConfigSV', function(id, data)
+RegisterServerEvent('t1ger_bankrobbery:updateConfigSV', function(id, data)
 	Config.Banks[id] = data
 	TriggerClientEvent('t1ger_bankrobbery:updateConfigCL', -1, id, Config.Banks[id])
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:inUseSV')
-AddEventHandler('t1ger_bankrobbery:inUseSV', function(id, state)
+RegisterServerEvent('t1ger_bankrobbery:inUseSV', function(id, state)
 	Config.Banks[id].inUse = state
 	TriggerClientEvent('t1ger_bankrobbery:inUseCL', -1, id, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:keypadHackedSV')
-AddEventHandler('t1ger_bankrobbery:keypadHackedSV', function(id, num, state)
+RegisterServerEvent('t1ger_bankrobbery:keypadHackedSV', function(id, num, state)
 	Config.Banks[id].keypads[num].hacked = state
 	TriggerClientEvent('t1ger_bankrobbery:keypadHackedCL', -1, id, num, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:doorFreezeSV')
-AddEventHandler('t1ger_bankrobbery:doorFreezeSV', function(id, num, state)
+RegisterServerEvent('t1ger_bankrobbery:doorFreezeSV', function(id, num, state)
 	Config.Banks[id].doors[num].freeze = state
 	TriggerClientEvent('t1ger_bankrobbery:doorFreezeCL', -1, id, num, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:safeRobbedSV')
-AddEventHandler('t1ger_bankrobbery:safeRobbedSV', function(id, num, state)
+RegisterServerEvent('t1ger_bankrobbery:safeRobbedSV', function(id, num, state)
 	Config.Banks[id].safes[num].robbed = state
 	TriggerClientEvent('t1ger_bankrobbery:safeRobbedCL', -1, id, num, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:safeFailedSV')
-AddEventHandler('t1ger_bankrobbery:safeFailedSV', function(id, num, state)
+RegisterServerEvent('t1ger_bankrobbery:safeFailedSV', function(id, num, state)
 	Config.Banks[id].safes[num].failed = state
 	TriggerClientEvent('t1ger_bankrobbery:safeFailedCL', -1, id, num, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:powerBoxDisabledSV')
-AddEventHandler('t1ger_bankrobbery:powerBoxDisabledSV', function(id, state)
+RegisterServerEvent('t1ger_bankrobbery:powerBoxDisabledSV', function(id, state)
 	Config.Banks[id].powerBox.disabled = state
 	TriggerClientEvent('t1ger_bankrobbery:powerBoxDisabledCL', -1, id, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:pettyCashRobbedSV')
-AddEventHandler('t1ger_bankrobbery:pettyCashRobbedSV', function(id, num, state)
+RegisterServerEvent('t1ger_bankrobbery:pettyCashRobbedSV', function(id, num, state)
     Config.Banks[id].pettyCash[num].robbed = state
 	TriggerClientEvent('t1ger_bankrobbery:pettyCashRobbedCL', -1, id, num, state)
 end)
 
-RegisterServerEvent('t1ger_bankrobbery:safeCrackedSV')
-AddEventHandler('t1ger_bankrobbery:safeCrackedSV', function(id, state)
+RegisterServerEvent('t1ger_bankrobbery:safeCrackedSV', function(id, state)
 	Config.Banks[id].crackSafe.cracked = state
 	TriggerClientEvent('t1ger_bankrobbery:safeCrackedCL', -1, id, state)
 end)
 
 -- Open Vault Door:
-RegisterServerEvent('t1ger_bankrobbery:openVaultSV')
-AddEventHandler('t1ger_bankrobbery:openVaultSV', function(open, id)
+RegisterServerEvent('t1ger_bankrobbery:openVaultSV', function(open, id)
 	TriggerClientEvent('t1ger_bankrobbery:openVaultCL', -1, open, id)
 end)
 
 -- Sync Vault Doors:
-RegisterServerEvent('t1ger_bankrobbery:setHeadingSV')
-AddEventHandler('t1ger_bankrobbery:setHeadingSV', function(id, type, heading)
+RegisterServerEvent('t1ger_bankrobbery:setHeadingSV', function(id, type, heading)
 	Config.Banks[id].doors[type].setHeading = heading
 	TriggerClientEvent('t1ger_bankrobbery:setHeadingCL', -1, id, type, heading)
 end)
 
 -- Event to apply particle FX:
-RegisterServerEvent('t1ger_bankrobbery:particleFxSV')
-AddEventHandler('t1ger_bankrobbery:particleFxSV', function(pos, dict, lib)
+RegisterServerEvent('t1ger_bankrobbery:particleFxSV', function(pos, dict, lib)
 	TriggerClientEvent('t1ger_bankrobbery:particleFxCL', -1, pos, dict, lib)
 end)
 
 -- Event to swap models:
-RegisterServerEvent('t1ger_bankrobbery:modelSwapSV')
-AddEventHandler('t1ger_bankrobbery:modelSwapSV', function(pos, radius, old_model, new_model)
+RegisterServerEvent('t1ger_bankrobbery:modelSwapSV', function(pos, radius, old_model, new_model)
 	TriggerClientEvent('t1ger_bankrobbery:modelSwapCL', -1, pos, radius, old_model, new_model)
 end)
 

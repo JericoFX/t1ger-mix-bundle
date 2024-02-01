@@ -2,13 +2,12 @@
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
 
-local ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports["qb-core"]:GetCoreObject()
 
 local jobCooldown = {} 
 
-RegisterServerEvent('t1ger_truckrobbery:jobCooldown')
-AddEventHandler('t1ger_truckrobbery:jobCooldown',function(source)
-	local xPlayer = ESX.GetPlayerFromId(source)
+RegisterServerEvent('t1ger_truckrobbery:jobCooldown',function(source)
+	local xPlayer = QBCore.Functions.GetPlayer(source)
 	table.insert(jobCooldown,{cooldown = xPlayer.identifier, time = (Config.TruckRobbery.cooldown * 60000)}) -- cooldown timer for doing missions
 end)
 
@@ -26,71 +25,61 @@ Citizen.CreateThread(function() -- do not touch this thread function!
 end)
 
 -- Callback to get cops count:
-ESX.RegisterServerCallback('t1ger_truckrobbery:copCount',function(source,cb)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local xPlayers = ESX.GetExtendedPlayers()
-	local CopsOnline = 0
-	for i=1, #(xPlayers) do
-		local xPlayer = xPlayers[i]
-		if xPlayer.job.name == 'police' then
-			CopsOnline = CopsOnline + 1
-		end
-	end
-	cb(CopsOnline)
+lib.callback.register("t1ger_truckrobbery:copCount",function(source) 
+	local players,count= QBCore.Functions.GetPlayersOnDuty("police")
+	return count
 end)
-
 -- Callback to get cooldown:
-ESX.RegisterServerCallback('t1ger_truckrobbery:getCooldown',function(source,cb)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if not CheckCooldownTimer(xPlayer.identifier) then
-		cb(nil)
+lib.callback.register("t1ger_truckrobbery:getCooldown",function(source) 
+	local xPlayer = QBCore.Functions.GetPlayer(source)
+	if not CheckCooldownTimer(xPlayer.PlayerData.citizenid) then
+		return nil
 	else
-		cb(GetCooldownTimer(xPlayer.identifier))
+		return GetCooldownTimer(xPlayer.PlayerData.citizenid)
 	end
 end)
-
 -- Callback to check if ply has job fees:
-ESX.RegisterServerCallback('t1ger_truckrobbery:getJobFees',function(source,cb)
-	local xPlayer = ESX.GetPlayerFromId(source)
+
+lib.callback.register("t1ger_truckrobbery:getCooldown",function(source) 
+	local xPlayer = QBCore.Functions.GetPlayer(source)
 	local money = 0
 	if Config.TruckRobbery.computer.fees.bankMoney then 
-		money = xPlayer.getAccount('bank').money
+		money = xPlayer.PlayerData.money.bank
 	else
-		money = xPlayer.getMoney()
+		money = xPlayer.PlayerData.money.cash
 	end
 	if money >= Config.TruckRobbery.computer.fees.amount then
-        cb(true)
+        return true
     else
-        cb(false)
+        return false
     end
 end)
 
 -- server side function to accept the mission
-RegisterServerEvent('t1ger_truckrobbery:startJobSV')
-AddEventHandler('t1ger_truckrobbery:startJobSV', function()
-	local xPlayer = ESX.GetPlayerFromId(source)
+RegisterServerEvent('t1ger_truckrobbery:startJobSV', function(item)
+	local xPlayer = QBCore.Functions.GetPlayer(source)
 	TriggerEvent('t1ger_truckrobbery:jobCooldown', source)
 	if Config.TruckRobbery.computer.fees.bankMoney then 
-		xPlayer.removeAccountMoney('bank', Config.TruckRobbery.computer.fees.amount)
+		xPlayer.Functions.RemoveMoney('bank', Config.TruckRobbery.computer.fees.amount,"T1ger")
 	else
-		xPlayer.removeMoney(Config.TruckRobbery.computer.fees.amount)
+		xPlayer.Functions.RemoveMoney("cash",Config.TruckRobbery.computer.fees.amount,"T1ger")
 	end
 	TriggerClientEvent('t1ger_truckrobbery:startJobCL', source)
 end)
 
 -- Event to trigger job reward:
-RegisterServerEvent('t1ger_truckrobbery:jobReward')
-AddEventHandler('t1ger_truckrobbery:jobReward',function()
+RegisterServerEvent('t1ger_truckrobbery:jobReward',function()
 	local cfg = Config.TruckRobbery.reward
-	local xPlayer = ESX.GetPlayerFromId(source)
+	local xPlayer = QBCore.Functions.GetPlayer(source)
 	local reward = math.random(cfg.money.min, cfg.money.max)
 	
 	if cfg.money.dirty then
-		xPlayer.addAccountMoney('black_money', tonumber(reward))
+		exports.ox_inventory:AddItem(source, 'black_money', reward, false, false, false)
+		--xPlayer.Functions.AddItem('black_money', tonumber(reward))
 	else
-		xPlayer.addMoney(reward)
+		xPlayer.Functions.AddMoney("cash",reward)
 	end
-	TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.source, (Lang['reward_notify']:format(reward)))
+	TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.PlayerData.source, (Lang['reward_notify']:format(reward)))
 	
 	if cfg.items.enable then
 		for k,v in pairs(cfg.items.list) do
@@ -98,25 +87,24 @@ AddEventHandler('t1ger_truckrobbery:jobReward',function()
 				local amount = math.random(v.min, v.max)
 				local name = tostring(v.item)
 				if Config.HasItemLabel then
-					name = ESX.GetItemLabel(v.item)
+					name = exports.ox_inventory:GetItem(source, v.item, false, false)
 				end
-				xPlayer.addInventoryItem(v.item, amount)
-				TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.source, (Lang['you_received_item']:format(amount,name)))
+				xPlayer.Function.AddItem(v.item, amount)
+				TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.playerData.source, (Lang['you_received_item']:format(amount,name.label)))
 			end
 		end
 	end
 end)
 
 -- Event to trigger police notifications:
-RegisterServerEvent('t1ger_truckrobbery:PoliceNotifySV')
-AddEventHandler('t1ger_truckrobbery:PoliceNotifySV', function(targetCoords, streetName)
+RegisterServerEvent('t1ger_truckrobbery:PoliceNotifySV', function(targetCoords, streetName)
 	TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyCL', -1, (Lang['police_notify']):format(streetName))
 	TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyBlip', -1, targetCoords)
 end)
 
 -- Event to update config.lua across all clients:
-RegisterServerEvent('t1ger_truckrobbery:SyncDataSV')
-AddEventHandler('t1ger_truckrobbery:SyncDataSV',function(data)
+RegisterServerEvent('t1ger_truckrobbery:SyncDataSV',function(data)
+	TriggerClientEvent("t1ger_truckrobbery:SyncJob",-1,data)
     TriggerClientEvent('t1ger_truckrobbery:SyncDataCL', -1, data)
 end)
 

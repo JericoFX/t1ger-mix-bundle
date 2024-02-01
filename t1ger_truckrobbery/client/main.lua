@@ -3,19 +3,7 @@
 ------------------------------------- 
 player = cache.ped
 coords = {}
-local PlayerData = nil
 local map_blip = nil
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
-	PlayerData =  QBCore.Functions.GetPlayerData()
-end)
-
-RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
-	PlayerData.job = job
-end)
-
-RegisterNetEvent('QBCore:Client:SetPlayerData', function(val)
-	PlayerData = val
-end)
 
 function onEnter(self)
     local cops = lib.callback.await("t1ger_truckrobbery:copCount",false)
@@ -57,46 +45,6 @@ CreateThread(function()
     onExit = onExit,
 	data = {computerDist = cfg.computer.draw.dist,minCops = cfg.police.minCops,start = false,key = cfg.computer.keybind }
 })
-    -- while true do
-	-- 	Wait(1)
-	-- 	local sleep = true
-	-- 	local cfg = Config.TruckRobbery
-	-- 	local distance = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], false)
-	-- 	if distance < cfg.computer.draw.dist then
-	-- 		sleep = false
-	-- 		DrawText3Ds(cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], cfg.computer.draw.text)
-	-- 		if IsControlJustPressed(0, cfg.computer.keybind) then
-	-- 			if distance < 2.0 then
-	-- 				if not isCop then
-	-- 					ESX.TriggerServerCallback('t1ger_truckrobbery:copCount', function(cops)
-	-- 						if cops >= cfg.police.minCops then
-	-- 							ESX.TriggerServerCallback('t1ger_truckrobbery:getCooldown', function(cooldown)
-	-- 								if cooldown == nil then
-	-- 									ESX.TriggerServerCallback('t1ger_truckrobbery:getJobFees', function(hasMoney)
-	-- 										if hasMoney then
-	-- 											OpenHackFunction()
-	-- 										else
-	-- 											ShowNotifyESX(Lang['not_enough_money'])
-	-- 										end
-	-- 									end)
-	-- 								else
-	-- 									ShowNotifyESX((Lang['cooldown_time_left']:format(cooldown)))
-	-- 								end
-	-- 							end)
-	-- 						else
-	-- 							ShowNotifyESX(Lang['not_enough_police'])
-	-- 						end
-	-- 					end)
-	-- 				end
-	-- 			else
-	-- 				ShowNotifyESX('Move closer to the computer.')
-	-- 			end
-	-- 		end
-	-- 	end
-	-- 	if sleep then 
-	-- 		Wait(1000)
-	-- 	end
-	-- end
 end)
 
 -- Function to hack into the location:
@@ -170,7 +118,10 @@ local ArmoredTruck = nil
 local StopTheJob = false
 local TruckDemolished = false
 local TruckIsExploded = false
-
+RegisterNetEvent("t1ger_truckrobbery:SyncJob",function(num) 
+local job = Config.TruckSpawns[num]
+	Config.TruckSpawns[num].inUse = true
+end)
 RegisterNetEvent('t1ger_truckrobbery:truckRobberyJob',function(num)
 	--- Spawn vehicle server side with the cops, and pass everything as a Bag for the peds be a cop
 	local job = Config.TruckSpawns[num]
@@ -478,8 +429,7 @@ function CreateArmoredTruck(model, pos)
 end
 
 -- Sync Config Data:
-RegisterNetEvent('t1ger_truckrobbery:SyncDataCL')
-AddEventHandler('t1ger_truckrobbery:SyncDataCL',function(data)
+RegisterNetEvent('t1ger_truckrobbery:SyncDataCL',function(data)
     Config.TruckSpawns = data
 end)
 AddEventHandler('playerSpawned', function(spawn)

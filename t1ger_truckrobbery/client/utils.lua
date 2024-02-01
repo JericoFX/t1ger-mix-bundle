@@ -1,7 +1,7 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
-ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports["qb-core"]:GetCoreObject()
 PlayerData 	= {}
 
 -- Police Notify:
@@ -9,27 +9,28 @@ isCop = false
 local streetName
 local _
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
+CreateThread(function()
+	PlayerData = QBCore.Functions.GetPlayerData()
 	isCop = IsPlayerJobCop()
 	-- Create Blip:
 	CreateTruckRobberyMapBlip()
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+	PlayerData =  QBCore.Functions.GetPlayerData()
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
 	PlayerData.job = job
-	isCop = IsPlayerJobCop()
 end)
+
+RegisterNetEvent('QBCore:Client:SetPlayerData', function(val)
+	PlayerData = val
+end)
+
 
 -- [[ ESX SHOW ADVANCED NOTIFICATION ]] --
-RegisterNetEvent('t1ger_truckrobbery:ShowAdvancedNotifyESX')
-AddEventHandler('t1ger_truckrobbery:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
+RegisterNetEvent('t1ger_truckrobbery:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
 	ESX.ShowAdvancedNotification(title, subject, msg, icon, iconType)
 	-- If you want to switch ESX.ShowNotification with something else:
 	-- 1) Comment out the function
@@ -38,8 +39,7 @@ AddEventHandler('t1ger_truckrobbery:ShowAdvancedNotifyESX', function(title, subj
 end)
 
 -- [[ ESX SHOW NOTIFICATION ]] --
-RegisterNetEvent('t1ger_truckrobbery:ShowNotifyESX')
-AddEventHandler('t1ger_truckrobbery:ShowNotifyESX', function(msg)
+RegisterNetEvent('t1ger_truckrobbery:ShowNotifyESX', function(msg)
 	ShowNotifyESX(msg)
 end)
 
@@ -51,32 +51,30 @@ function ShowNotifyESX(msg)
 end
 
 function NotifyPoliceFunction()
-	TriggerServerEvent('t1ger_truckrobbery:PoliceNotifySV', GetEntityCoords(GetPlayerPed(-1)), streetName)
+	TriggerServerEvent('t1ger_truckrobbery:PoliceNotifySV', GetEntityCoords(cache.ped), streetName)
 	-- If you want to use your own alert:
 	-- 1) Comment out the 'TriggerServerEvent('t1ger_carthief:OutlawNotifySV',GetEntityCoords(PlayerPedId()),streetName)'
 	-- 2) replace whatever even you use to trigger your alert.
 	
 end
 
-RegisterNetEvent('t1ger_truckrobbery:PoliceNotifyCL')
-AddEventHandler('t1ger_truckrobbery:PoliceNotifyCL', function(alert)
+RegisterNetEvent('t1ger_truckrobbery:PoliceNotifyCL', function(alert)
 	if isCop then
 		TriggerEvent('chat:addMessage', { args = {(Lang['dispatch_name']).. alert}})
 	end
 end)
 
 -- Thread for Police Notify
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(3000)
+		Wait(3000)
 		local pos = GetEntityCoords(GetPlayerPed(-1), false)
 		streetName,_ = GetStreetNameAtCoord(pos.x, pos.y, pos.z)
 		streetName = GetStreetNameFromHashKey(streetName)
 	end
 end)
 
-RegisterNetEvent('t1ger_truckrobbery:PoliceNotifyBlip')
-AddEventHandler('t1ger_truckrobbery:PoliceNotifyBlip', function(targetCoords)
+RegisterNetEvent('t1ger_truckrobbery:PoliceNotifyBlip', function(targetCoords)
 	local cfg = Config.TruckRobbery.police
 	if isCop and cfg.blip.show then 
 		local alpha = cfg.blip.alpha
@@ -88,7 +86,7 @@ AddEventHandler('t1ger_truckrobbery:PoliceNotifyBlip', function(targetCoords)
 		SetBlipAsShortRange(alertBlip, true)
 
 		while alpha ~= 0 do
-			Citizen.Wait(cfg.blip.time * 4)
+			Wait(cfg.blip.time * 4)
 			alpha = alpha - 1
 			SetBlipAlpha(alertBlip, alpha)
 
@@ -149,14 +147,14 @@ end
 -- Load Anim
 function LoadAnim(animDict)
 	RequestAnimDict(animDict)
-	while not HasAnimDictLoaded(animDict) do Citizen.Wait(10) end
+	while not HasAnimDictLoaded(animDict) do Wait(10) end
 end
 
 -- Load Model
 function LoadModel(model)
 	RequestModel(model)
 	while not HasModelLoaded(model) do
-		Citizen.Wait(10)
+		Wait(10)
 	end
 end
 

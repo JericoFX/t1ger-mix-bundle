@@ -1,16 +1,8 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
-player = nil
+player = cache.ped
 coords = {}
-
-Citizen.CreateThread(function()
-    while true do
-		player = PlayerPedId()
-		coords = GetEntityCoords(player)
-        Citizen.Wait(500)
-    end
-end)
 
 local map_blip = nil
 

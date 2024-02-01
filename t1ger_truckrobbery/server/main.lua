@@ -8,12 +8,10 @@ local jobCooldown = {}
 
 RegisterServerEvent('t1ger_truckrobbery:jobCooldown',function(source)
 	local xPlayer = QBCore.Functions.GetPlayer(source)
-	table.insert(jobCooldown,{cooldown = xPlayer.identifier, time = (Config.TruckRobbery.cooldown * 60000)}) -- cooldown timer for doing missions
+	table.insert(jobCooldown,{cooldown = xPlayer.PlayerData.citizenid, time = (Config.TruckRobbery.cooldown * 60000)}) -- cooldown timer for doing missions
 end)
 
-Citizen.CreateThread(function() -- do not touch this thread function!
-	while true do
-	Citizen.Wait(1000)
+lib.cron.new("* * * * *",function() 
 		for k,v in pairs(jobCooldown) do
 			if v.time <= 0 then
 				RemoveCooldownTimer(v.cooldown)
@@ -21,9 +19,7 @@ Citizen.CreateThread(function() -- do not touch this thread function!
 				v.time = v.time - 1000
 			end
 		end
-	end
-end)
-
+end, true)
 -- Callback to get cops count:
 lib.callback.register("t1ger_truckrobbery:copCount",function(source) 
 	local players,count= QBCore.Functions.GetPlayersOnDuty("police")
@@ -75,7 +71,6 @@ RegisterServerEvent('t1ger_truckrobbery:jobReward',function()
 	
 	if cfg.money.dirty then
 		exports.ox_inventory:AddItem(source, 'black_money', reward, false, false, false)
-		--xPlayer.Functions.AddItem('black_money', tonumber(reward))
 	else
 		xPlayer.Functions.AddMoney("cash",reward)
 	end
@@ -96,6 +91,12 @@ RegisterServerEvent('t1ger_truckrobbery:jobReward',function()
 	end
 end)
 
+lib.callback.register("t1ger_truckrobbery:SpawnTruck",function(source,jobData) 
+	if not jobdata then return end
+    local veh = CreateVehicleServerSetter(`stockade`, "automobile", jobData.pos, 180.0)
+    while not DoesEntityExist(veh) do Wait(0) end
+    return veh
+end)
 -- Event to trigger police notifications:
 RegisterServerEvent('t1ger_truckrobbery:PoliceNotifySV', function(targetCoords, streetName)
 	TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyCL', -1, (Lang['police_notify']):format(streetName))

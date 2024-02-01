@@ -126,6 +126,7 @@ RegisterNetEvent('t1ger_truckrobbery:truckRobberyJob',function(num)
 	--- Spawn vehicle server side with the cops, and pass everything as a Bag for the peds be a cop
 	local job = Config.TruckSpawns[num]
 	Config.TruckSpawns[num].inUse = true
+	local veh = lib.callback.await("t1ger_truckrobbery:SpawnTruck",false,job)
 	TriggerServerEvent('t1ger_truckrobbery:SyncDataSV', Config.TruckSpawns)
 	local TruckRobbed = false
 	local ArmoredTruckSpawned = false
@@ -133,7 +134,7 @@ RegisterNetEvent('t1ger_truckrobbery:truckRobberyJob',function(num)
 	local Guards = {}
 	local truck_blip = CreateTruckBlip(job)
 	local truck_pos = {}
-
+	ArmoredTruck = VehToNet(veh)
 	while not TruckRobbed do
 		Wait(1)
 		local sleep = true

@@ -102,7 +102,7 @@ end)
 -- Function to hack into the location:
 function OpenHackFunction()
 	local cfg = Config.TruckRobbery
-	LoadAnim(cfg.computer.anim.dict)
+	lib.requestAnim(cfg.computer.anim.dict)
 	TaskPlayAnimAdvanced(player, cfg.computer.anim.dict, cfg.computer.anim.lib, cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], 0.0, 0.0, cfg.computer.pos[4], 3.0, 1.0, -1, 30, 1.0, 0, 0 )
 	SetEntityHeading(player, cfg.computer.pos[4])
 	FreezeEntityPosition(player, true)
@@ -150,8 +150,7 @@ function CreateTruckRobberyMapBlip()
 end
 
 -- Making sure that players don't get the same mission at the same time
-RegisterNetEvent('t1ger_truckrobbery:startJobCL')
-AddEventHandler('t1ger_truckrobbery:startJobCL',function()
+RegisterNetEvent('t1ger_truckrobbery:startJobCL',function()
     local num = math.random(1,#Config.TruckSpawns)
     local takenNum = 0
     while Config.TruckSpawns[num].InUse and takenNum < 100 do
@@ -172,12 +171,11 @@ local StopTheJob = false
 local TruckDemolished = false
 local TruckIsExploded = false
 
-RegisterNetEvent('t1ger_truckrobbery:truckRobberyJob')
-AddEventHandler('t1ger_truckrobbery:truckRobberyJob',function(num)
+RegisterNetEvent('t1ger_truckrobbery:truckRobberyJob',function(num)
+	--- Spawn vehicle server side with the cops, and pass everything as a Bag for the peds be a cop
 	local job = Config.TruckSpawns[num]
 	Config.TruckSpawns[num].inUse = true
 	TriggerServerEvent('t1ger_truckrobbery:SyncDataSV', Config.TruckSpawns)
-
 	local TruckRobbed = false
 	local ArmoredTruckSpawned = false
 	local SecuritySpawned = false

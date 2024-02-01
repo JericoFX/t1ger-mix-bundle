@@ -3,51 +3,100 @@
 ------------------------------------- 
 player = cache.ped
 coords = {}
-
+local PlayerData = nil
 local map_blip = nil
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+	PlayerData =  QBCore.Functions.GetPlayerData()
+end)
 
--- Job Start Thread:
-Citizen.CreateThread(function()
-    while true do
-		Citizen.Wait(1)
-		local sleep = true
-		local cfg = Config.TruckRobbery
-		local distance = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], false)
-		if distance < cfg.computer.draw.dist then
-			sleep = false
-			DrawText3Ds(cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], cfg.computer.draw.text)
-			if IsControlJustPressed(0, cfg.computer.keybind) then
-				if distance < 2.0 then
-					if not isCop then
-						ESX.TriggerServerCallback('t1ger_truckrobbery:copCount', function(cops)
-							if cops >= cfg.police.minCops then
-								ESX.TriggerServerCallback('t1ger_truckrobbery:getCooldown', function(cooldown)
-									if cooldown == nil then
-										ESX.TriggerServerCallback('t1ger_truckrobbery:getJobFees', function(hasMoney)
-											if hasMoney then
-												OpenHackFunction()
-											else
-												ShowNotifyESX(Lang['not_enough_money'])
-											end
-										end)
-									else
-										ShowNotifyESX((Lang['cooldown_time_left']:format(cooldown)))
-									end
-								end)
-							else
-								ShowNotifyESX(Lang['not_enough_police'])
-							end
-						end)
-					end
-				else
-					ShowNotifyESX('Move closer to the computer.')
-				end
-			end
-		end
-		if sleep then 
-			Citizen.Wait(1000)
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+	PlayerData.job = job
+end)
+
+RegisterNetEvent('QBCore:Client:SetPlayerData', function(val)
+	PlayerData = val
+end)
+
+function onEnter(self)
+    local cops = lib.callback.await("t1ger_truckrobbery:copCount",false)
+	local cooldown = lib.callback.await("t1ger_truckrobbery:getCooldown",false)
+	local hasMoney = lib.callback.await("t1ger_truckrobbery:getJobFees",false)
+	if not cops >= self.data.minCops then return end
+	if not cooldown then return end
+	if not hasMoney then return end
+	if not PlayerData.job.name == "police" then return end 
+	self.data.start = true
+
+end
+ 
+function onExit(self)
+   self.data.start = false
+end
+ 
+function inside(self)
+    if not self.data.start then
+		return
+	end
+	local ped = GetEntityCoords(cache.ped,false)
+	if #(self.data.computerDist - ped) < 2.0 then
+		if IsControlJustPressed(0, self.data.key then
+			OpenHackFunction()
 		end
 	end
+end
+-- Job Start Thread:
+CreateThread(function()
+	local cfg = Config.TruckRobbery
+	local startLocation = lib.zones.box({
+    coords = vec3(cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3]),
+    size = vec3(2, 2, 2),
+    rotation = 0,
+    debug = true,
+    inside = inside,
+    onEnter = onEnter,
+    onExit = onExit,
+	data = {computerDist = cfg.computer.draw.dist,minCops = cfg.police.minCops,start = false,key = cfg.computer.keybind }
+})
+    -- while true do
+	-- 	Wait(1)
+	-- 	local sleep = true
+	-- 	local cfg = Config.TruckRobbery
+	-- 	local distance = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], false)
+	-- 	if distance < cfg.computer.draw.dist then
+	-- 		sleep = false
+	-- 		DrawText3Ds(cfg.computer.pos[1], cfg.computer.pos[2], cfg.computer.pos[3], cfg.computer.draw.text)
+	-- 		if IsControlJustPressed(0, cfg.computer.keybind) then
+	-- 			if distance < 2.0 then
+	-- 				if not isCop then
+	-- 					ESX.TriggerServerCallback('t1ger_truckrobbery:copCount', function(cops)
+	-- 						if cops >= cfg.police.minCops then
+	-- 							ESX.TriggerServerCallback('t1ger_truckrobbery:getCooldown', function(cooldown)
+	-- 								if cooldown == nil then
+	-- 									ESX.TriggerServerCallback('t1ger_truckrobbery:getJobFees', function(hasMoney)
+	-- 										if hasMoney then
+	-- 											OpenHackFunction()
+	-- 										else
+	-- 											ShowNotifyESX(Lang['not_enough_money'])
+	-- 										end
+	-- 									end)
+	-- 								else
+	-- 									ShowNotifyESX((Lang['cooldown_time_left']:format(cooldown)))
+	-- 								end
+	-- 							end)
+	-- 						else
+	-- 							ShowNotifyESX(Lang['not_enough_police'])
+	-- 						end
+	-- 					end)
+	-- 				end
+	-- 			else
+	-- 				ShowNotifyESX('Move closer to the computer.')
+	-- 			end
+	-- 		end
+	-- 	end
+	-- 	if sleep then 
+	-- 		Wait(1000)
+	-- 	end
+	-- end
 end)
 
 -- Function to hack into the location:
@@ -60,7 +109,7 @@ function OpenHackFunction()
 	if Config.progressBars then 
 		exports['progressBars']:startUI((cfg.computer.mHacking.duration * 1000), Lang['progbar_hacking'])
 	end
-	Citizen.Wait(cfg.computer.mHacking.duration * 1000)
+	Wait(cfg.computer.mHacking.duration * 1000)
 	if cfg.computer.mHacking.enable then 
 		TriggerEvent("mhacking:show")
 		TriggerEvent("mhacking:start", cfg.computer.mHacking.blocks, cfg.computer.mHacking.seconds, HackCallback)
@@ -137,7 +186,7 @@ AddEventHandler('t1ger_truckrobbery:truckRobberyJob',function(num)
 	local truck_pos = {}
 
 	while not TruckRobbed do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		if job.inUse then 
 			local distance = 0
@@ -244,7 +293,7 @@ AddEventHandler('t1ger_truckrobbery:truckRobberyJob',function(num)
 						truck_dist = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, truck_pos.x, truck_pos.y, truck_pos.z, false)
 		
 						if truck_dist > 45.0 then
-							Citizen.Wait(500)
+							Wait(500)
 						end
 		
 						if truck_dist < 4.5 then
@@ -269,7 +318,7 @@ AddEventHandler('t1ger_truckrobbery:truckRobberyJob',function(num)
 					Config.TruckSpawns[num].inUse = false
 					Wait(150)
 					TriggerServerEvent('t1ger_truckrobbery:SyncDataSV',Config.TruckSpawns)
-					Citizen.Wait(500)
+					Wait(500)
 					SetEntityAsNoLongerNeeded(ArmoredTruck)
 					if DoesBlipExist(truck_blip) then
 						RemoveBlip(truck_blip)
@@ -295,7 +344,7 @@ AddEventHandler('t1ger_truckrobbery:truckRobberyJob',function(num)
 
 			end
 		end
-		if sleep then Citizen.Wait(1000) end
+		if sleep then Wait(1000) end
 	end
 end)
 
@@ -354,23 +403,23 @@ function BlowTheTruckDoor()
 		local itemC4prop = CreateObject(GetHashKey('prop_c4_final_green'), x, y, z+0.2,  true,  true, true)
 		AttachEntityToEntity(itemC4prop, player, GetPedBoneIndex(player, 60309), 0.06, 0.0, 0.06, 90.0, 0.0, 0.0, true, true, false, true, 1, true)
 		SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
-		Citizen.Wait(500)
+		Wait(500)
 		FreezeEntityPosition(player, true)
 		TaskPlayAnim(player, 'anim@heists@ornate_bank@thermal_charge_heels', "thermal_charge", 3.0, -8, -1, 63, 0, 0, 0, 0 )
 		if Config.progressBars then 
 			exports['progressBars']:startUI(5500, Lang['progbar_plant_c4'])
 		end
-		Citizen.Wait(5500)
+		Wait(5500)
 		
 		ClearPedTasks(player)
 		DetachEntity(itemC4prop)
 		AttachEntityToEntity(itemC4prop, ArmoredTruck, GetEntityBoneIndexByName(ArmoredTruck, 'door_pside_r'), -0.7, 0.0, 0.0, 0.0, 0.0, 0.0, true, true, false, true, 1, true)
 		FreezeEntityPosition(player, false)
-		Citizen.Wait(500)
+		Wait(500)
 		if Config.progressBars then 
 			exports['progressBars']:startUI((cfg.rob.detonateTimer * 1000), Lang['progbar_detonating'])	
 		end
-		Citizen.Wait((cfg.rob.detonateTimer * 1000))
+		Wait((cfg.rob.detonateTimer * 1000))
 		
 		local c4_explode_pos = GetWorldPositionOfEntityBone(ArmoredTruck, GetEntityBoneIndexByName(ArmoredTruck, 'door_pside_r'))
 		SetVehicleDoorBroken(ArmoredTruck, 2, false)
@@ -396,7 +445,7 @@ function RobbingTheMoney()
 	if Config.progressBars then 
 		exports['progressBars']:startUI((cfg.rob.takeLootTimer * 1000), Lang['progbar_robbing'])
 	end
-	Citizen.Wait((cfg.rob.takeLootTimer * 1000))
+	Wait((cfg.rob.takeLootTimer * 1000))
 	
 	DeleteEntity(moneyBag)
 	ClearPedTasks(player)
@@ -407,7 +456,7 @@ function RobbingTheMoney()
 	end
 	
 	TriggerServerEvent('t1ger_truckrobbery:jobReward')
-	Citizen.Wait(1000)
+	Wait(1000)
 	StopTheJob = true
 end
 

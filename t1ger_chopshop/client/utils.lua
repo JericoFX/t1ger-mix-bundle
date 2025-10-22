@@ -1,207 +1,214 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-ESX = exports['es_extended']:getSharedObject()
-PlayerData 	= {}
+local QBCore = exports[Config.CoreResource]:GetCoreObject()
 
--- Police Notify:
+player = cache.ped
+coords = cache.coords
+PlayerData = {}
 isCop = false
+
 local streetName
-local _
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
-	isCop = IsPlayerJobCop()
-end)
-
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
-end)
-
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
-	isCop = IsPlayerJobCop()
-end)
-
--- [[ ESX SHOW ADVANCED NOTIFICATION ]] --
-RegisterNetEvent('t1ger_chopshop:ShowAdvancedNotifyESX')
-AddEventHandler('t1ger_chopshop:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
-	ESX.ShowAdvancedNotification(title, subject, msg, icon, iconType)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
-	
-end)
-
--- [[ ESX SHOW NOTIFICATION ]] --
-RegisterNetEvent('t1ger_chopshop:ShowNotifyESX')
-AddEventHandler('t1ger_chopshop:ShowNotifyESX', function(msg)
-	ShowNotifyESX(msg)
-end)
-
-function ShowNotifyESX(msg)
-	SetNotificationTextEntry('STRING')
-	AddTextComponentSubstringPlayerName(msg)
-	DrawNotification(true, true)
-	--ESX.ShowNotification(msg)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
+local function refreshPlayerData(data)
+    PlayerData = data or QBCore.Functions.GetPlayerData() or {}
+    isCop = IsPlayerJobCop()
 end
 
--- [[ PHONE MESSAGES ]] --
+if LocalPlayer and LocalPlayer.state and LocalPlayer.state.isLoggedIn then
+    refreshPlayerData()
+end
+
+lib.onCache('ped', function(value)
+    player = value
+end)
+
+lib.onCache('coords', function(value)
+    coords = value
+    if value then
+        local streetHash = GetStreetNameAtCoord(value.x, value.y, value.z)
+        streetName = GetStreetNameFromHashKey(streetHash)
+    end
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    refreshPlayerData()
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    PlayerData = {}
+    isCop = false
+end)
+
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+    PlayerData.job = job
+    isCop = IsPlayerJobCop()
+end)
+
+RegisterNetEvent('t1ger_chopshop:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
+    local description = msg
+    local header = title
+    if subject and subject ~= '' then
+        header = ("%s - %s"):format(title, subject)
+    end
+    lib.notify({
+        title = header,
+        description = description,
+        icon = icon,
+        type = 'inform'
+    })
+end)
+
+RegisterNetEvent('t1ger_chopshop:ShowNotifyESX', function(msg)
+    ShowNotifyESX(msg)
+end)
+
+function ShowNotifyESX(msg, notifType)
+    lib.notify({
+        description = msg,
+        type = notifType or 'inform'
+    })
+end
+
 function JobNotifyMSG(msg, number)
-    PlaySoundFrontend(-1, "Menu_Accept", "Phone_SoundSet_Default", true)
-	ShowNotifyESX(Lang['new_msg_from']:format(number))
-	TriggerServerEvent('gcPhone:sendMessage', number, msg)
-	-- If you use GCPhone and have not changed in it, do not touch this!
-	-- If you use another phone or customized gcphone functions etc:
-	-- 1) Edit the TriggerServerEvent to your likings
+    PlaySoundFrontend(-1, 'Menu_Accept', 'Phone_SoundSet_Default', true)
+    lib.notify({
+        title = Lang['new_msg_from']:format(number),
+        description = msg,
+        type = 'inform'
+    })
 end
 
--- [[ POLICE ALERTS ]] --
-
-Citizen.CreateThread(function()
-	while true do
-		Citizen.Wait(3000)
-		local pos = GetEntityCoords(GetPlayerPed(-1), false)
-		streetName,_ = GetStreetNameAtCoord(pos.x, pos.y, pos.z)
-		streetName = GetStreetNameFromHashKey(streetName)
-	end
-end)
-
--- Alert Police:
 function AlertPoliceFunction()
-	TriggerServerEvent('t1ger_chopshop:PoliceNotifySV', GetEntityCoords(GetPlayerPed(-1)), streetName)
+    if not coords then return end
+    TriggerServerEvent('t1ger_chopshop:PoliceNotifySV', coords, streetName)
 end
 
-RegisterNetEvent('t1ger_chopshop:PoliceNotifyCL')
-AddEventHandler('t1ger_chopshop:PoliceNotifyCL', function(alert)
-	if isCop then
-		TriggerEvent('chat:addMessage', { args = {(Lang['dispatch_name']).. alert}})
-	end
+RegisterNetEvent('t1ger_chopshop:PoliceNotifyCL', function(alert)
+    if isCop then
+        lib.notify({
+            title = Lang['dispatch_name'],
+            description = alert,
+            type = 'inform'
+        })
+    end
 end)
 
-RegisterNetEvent('t1ger_chopshop:PoliceNotifyBlip')
-AddEventHandler('t1ger_chopshop:PoliceNotifyBlip', function(targetCoords)
-	local cfg = Config.ChopShop.Police.alert
-	if isCop and cfg.blip.enable then 
-		local alpha = cfg.blip.alpha
-		local alertBlip = AddBlipForRadius(targetCoords.x, targetCoords.y, targetCoords.z, cfg.blip.radius)
+RegisterNetEvent('t1ger_chopshop:PoliceNotifyBlip', function(targetCoords)
+    local cfg = Config.ChopShop.Police.alert
+    if not isCop or not cfg.blip.enable then
+        return
+    end
 
-		SetBlipHighDetail(alertBlip, true)
-		SetBlipColour(alertBlip, cfg.blip.color)
-		SetBlipAlpha(alertBlip, alpha)
-		SetBlipAsShortRange(alertBlip, true)
+    local alpha = cfg.blip.alpha
+    local alertBlip = AddBlipForRadius(targetCoords.x, targetCoords.y, targetCoords.z, cfg.blip.radius)
 
-		while alpha ~= 0 do
-			Citizen.Wait(cfg.blip.time * 4)
-			alpha = alpha - 1
-			SetBlipAlpha(alertBlip, alpha)
+    SetBlipHighDetail(alertBlip, true)
+    SetBlipColour(alertBlip, cfg.blip.color)
+    SetBlipAlpha(alertBlip, alpha)
+    SetBlipAsShortRange(alertBlip, true)
 
-			if alpha == 0 then
-				RemoveBlip(alertBlip)
-				return
-			end
-		end
-	end
+    while alpha ~= 0 do
+        Wait(cfg.blip.time * 4)
+        alpha -= 1
+        SetBlipAlpha(alertBlip, alpha)
+        if alpha == 0 then
+            RemoveBlip(alertBlip)
+            return
+        end
+    end
 end)
 
--- Function for 3D text:
-function DrawText3Ds(x,y,z, text)
-    local onScreen,_x,_y=World3dToScreen2d(x,y,z)
-    local px,py,pz=table.unpack(GetGameplayCamCoords())
+function DrawText3Ds(x, y, z, text)
+    local onScreen, _x, _y = World3dToScreen2d(x, y, z)
+    local px, py, pz = table.unpack(GetGameplayCamCoords())
     SetTextScale(0.32, 0.32)
     SetTextFont(4)
     SetTextProportional(1)
     SetTextColour(255, 255, 255, 255)
-    SetTextEntry("STRING")
+    SetTextEntry('STRING')
     SetTextCentre(1)
     AddTextComponentString(text)
-    DrawText(_x,_y)
+    DrawText(_x, _y)
     local factor = (string.len(text)) / 500
-    DrawRect(_x,_y+0.0125, 0.015+ factor, 0.03, 0, 0, 0, 80)
+    DrawRect(_x, _y + 0.0125, 0.015 + factor, 0.03, 0, 0, 0, 80)
 end
 
--- Load Anim
 function LoadAnim(animDict)
-	RequestAnimDict(animDict)
-	while not HasAnimDictLoaded(animDict) do Citizen.Wait(10) end
+    RequestAnimDict(animDict)
+    while not HasAnimDictLoaded(animDict) do
+        Wait(10)
+    end
 end
 
--- Load Model:
 function LoadModel(model)
-	RequestModel(model)
-	while not HasModelLoaded(model) do Citizen.Wait(10) end
+    RequestModel(model)
+    while not HasModelLoaded(model) do
+        Wait(10)
+    end
 end
 
--- draw vehicle health
 function DrawVehHealthUtils(health)
-	-- Background Settings:
-	drawRct(0.905, 0.95, 0.0630, 0.020, 0, 0, 0, 80)
-	-- Health Bar Settings:
-	drawRct(0.905, 0.95, 0.0630*(health*0.01), 0.019, 255, 30, 0, 125)
-	-- Text Settings:
-	SetTextScale(0.34, 0.34)
-	SetTextFont(4)
-	SetTextProportional(1)
-	SetTextColour(255, 255, 255, 255)
-	SetTextEdge(2, 0, 0, 0, 150)
-	SetTextEntry("STRING")
-	SetTextCentre(1)
-	AddTextComponentString(((Lang['draw_veh_health']):format(round(health, 1))).."%")
-	DrawText(0.938,0.9480)
+    drawRct(0.905, 0.95, 0.0630, 0.020, 0, 0, 0, 80)
+    drawRct(0.905, 0.95, 0.0630 * (health * 0.01), 0.019, 255, 30, 0, 125)
+    SetTextScale(0.34, 0.34)
+    SetTextFont(4)
+    SetTextProportional(1)
+    SetTextColour(255, 255, 255, 255)
+    SetTextEdge(2, 0, 0, 0, 150)
+    SetTextEntry('STRING')
+    SetTextCentre(1)
+    AddTextComponentString(((Lang['draw_veh_health']):format(round(health, 1))).."%")
+    DrawText(0.938,0.9480)
 end
 
 function drawRct(x, y, width, height, r, g, b, a)
-	DrawRect(x + width/2, y + height/2, width, height, r, g, b, a)
+    DrawRect(x + width / 2, y + height / 2, width, height, r, g, b, a)
 end
 
--- Round Fnction:
 function round(num, numDecimalPlaces)
-    local mult = 10^(numDecimalPlaces or 0)
+    local mult = 10 ^ (numDecimalPlaces or 0)
     return math.floor(num * mult + 0.5) / mult
 end
 
--- Comma Function:
-function comma_value(n) -- credit http://richard.warburton.it
-	local left,num,right = string.match(n,'^([^%d]*%d)(%d*)(.-)$')
-	return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
+function comma_value(n)
+    local left, num, right = string.match(n, '^([^%d]*%d)(%d*)(.-)$')
+    return left .. (num:reverse():gsub('(%d%d%d)', '%1,'):reverse()) .. right
 end
 
--- Is Player A cop?
-function IsPlayerJobCop()	
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	for k,v in pairs(Config.ChopShop.Police.jobs) do
-		if PlayerData.job.name == v then return true end
-	end
-	return false
+function IsPlayerJobCop()
+    if not PlayerData or not PlayerData.job or not PlayerData.job.name then
+        return false
+    end
+    if PlayerData.job.onduty ~= nil and not PlayerData.job.onduty then
+        return false
+    end
+    for _, jobName in pairs(Config.ChopShop.Police.jobs) do
+        if PlayerData.job.name == jobName then
+            return true
+        end
+    end
+    return false
 end
 
--- Get Vehicle Color Name:
 function GetVehColorName(entity)
-	local color1, color2 = GetVehicleColours(entity)
-	if color1 == 0 then color1 = 1 end
-	if color2 == 0 then color2 = 2 end
-	if color1 == -1 then color1 = 158 end
-	if color2 == -1 then color2 = 158 end
+    local color1, color2 = GetVehicleColours(entity)
+    if color1 == 0 then color1 = 1 end
+    if color2 == 0 then color2 = 2 end
+    if color1 == -1 then color1 = 158 end
+    if color2 == -1 then color2 = 158 end
     return colors[color1], colors[color2]
 end
 
--- Get Vehicle Name:
 function GetVehName(entity)
     local hashKey = GetEntityModel(entity)
     local display = GetDisplayNameFromVehicleModel(hashKey)
-	local label = GetLabelText(display)
+    local label = GetLabelText(display)
     if label == 'CARNOTFOUND' then label = 'Unknown' end
     return label
 end
 
--- Vehicle Colors:
 colors = {
 	[0] = "Metallic Black",
 	[1] = "Metallic Graphite Black",

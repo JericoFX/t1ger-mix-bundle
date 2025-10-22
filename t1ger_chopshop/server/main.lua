@@ -1,295 +1,343 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-ESX = exports['es_extended']:getSharedObject()
-
-Citizen.CreateThread(function ()
-    -- Check if mysql-async is started:
-    while GetResourceState('mysql-async') ~= 'started' do
-        Citizen.Wait(0)
-    end
-    while GetResourceState(GetCurrentResourceName()) ~= 'started' do 
-        Citizen.Wait(0)
-    end
-    if GetResourceState(GetCurrentResourceName()) == 'started' then 
-        InitializeChopShop()
-    end
-end)
+local QBCore = exports[Config.CoreResource]:GetCoreObject()
 
 local carList = {}
-local scrap_cooldown = {}
-local thief_cooldown = {}
+local scrapCooldown = {}
+local thiefCooldown = {}
+local activeThiefJobs = {}
+local processedScrapPlates = {}
 
--- Function to initialize the resource:
-function InitializeChopShop()
-	Citizen.Wait(1000)
-	while true do
-		local ready = false 
-		local scrapList, ready = GenerateCarList()
-		while not ready do Citizen.Wait(200) end
-		TriggerClientEvent('t1ger_chopshop:intializeChopShop', -1, scrapList)
-		Citizen.Wait(Config.ChopShop.Settings.newCarListTimer * 60000)
-	end
+local function logSecurityEvent(src, player, reason, details)
+    local identifier = 'unknown'
+    local name = ('src:%s'):format(src or 'n/a')
+
+    if player and player.PlayerData then
+        identifier = player.PlayerData.citizenid or identifier
+        if player.PlayerData.name and player.PlayerData.name ~= '' then
+            name = player.PlayerData.name
+        end
+    end
+
+    local suffix = ''
+    if details and details ~= '' then
+        suffix = (' (%s)'):format(details)
+    end
+
+    print(('[t1ger_chopshop] %s [%s] %s%s'):format(name, identifier, reason, suffix))
 end
 
--- Function to scramble & generate car list:
-function GenerateCarList()
+local function cleanupProcessedPlates()
+    local now = os.time()
+    for plate, expires in pairs(processedScrapPlates) do
+        if expires <= now then
+            processedScrapPlates[plate] = nil
+        end
+    end
+end
+
+local function getAccount(dirty)
+    if dirty and Config.BlackMoney and Config.BlackMoney.account then
+        return Config.BlackMoney.account
+    end
+    return 'cash'
+end
+
+local function canAfford(player, amount, dirty)
+    return player.Functions.GetMoney(getAccount(dirty)) >= amount
+end
+
+local function removeMoney(player, amount, dirty, reason)
+    return player.Functions.RemoveMoney(getAccount(dirty), amount, reason or 't1ger-chopshop')
+end
+
+local function addMoney(player, amount, dirty, reason)
+    player.Functions.AddMoney(getAccount(dirty), amount, reason or 't1ger-chopshop')
+end
+
+local function GenerateCarList()
     carList = {}
     local scrambler = {}
     local totalCount = Config.ChopShop.Settings.carListAmount
-    for i = 1, totalCount do 
+    for i = 1, totalCount do
         local val = math.random(1, #Config.ScrapVehicles)
-        Citizen.Wait(1)
-        math.randomseed(GetGameTimer())
+        Wait(1)
         while scrambler[val] == val do
             val = math.random(1, #Config.ScrapVehicles)
         end
         scrambler[val] = val
         local car = Config.ScrapVehicles[val]
-        table.insert(carList, {label = car.label, hash = car.hash, price = car.price})
+        carList[#carList + 1] = { label = car.label, hash = car.hash, price = car.price }
     end
-    return carList, true
+    return carList
 end
 
--- Load CarList on playerLoaded
-AddEventHandler('esx:playerLoaded', function(playerId)
-	TriggerClientEvent('t1ger_chopshop:intializeChopShop', playerId, carList)
+local function InitializeChopShop()
+    Wait(1000)
+    while true do
+        GenerateCarList()
+        TriggerClientEvent('t1ger_chopshop:intializeChopShop', -1, carList)
+        Wait(Config.ChopShop.Settings.newCarListTimer * 60000)
+    end
+end
+
+CreateThread(InitializeChopShop)
+
+AddEventHandler('QBCore:Server:OnPlayerLoaded', function(player)
+    if not player then return end
+    TriggerClientEvent('t1ger_chopshop:intializeChopShop', player.PlayerData.source, carList)
 end)
 
--- Callback to check if vehicle is owned:
-ESX.RegisterServerCallback('t1ger_chopshop:isVehicleOwned',function(source, cb, plate)
-    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE plate = @plate',{ ['@plate'] = plate}, function(result) 
-        if result[1] then 
-			cb(true)
-        else
-			cb(false)
+AddEventHandler('playerDropped', function()
+    local src = source
+    activeThiefJobs[src] = nil
+end)
+
+QBCore.Functions.CreateCallback('t1ger_chopshop:isVehicleOwned', function(source, cb, plate)
+    if not plate then
+        cb(false)
+        return
+    end
+    local result = MySQL.scalar.await('SELECT 1 FROM owned_vehicles WHERE plate = ?', { plate })
+    cb(result ~= nil)
+end)
+
+QBCore.Functions.CreateCallback('t1ger_chopshop:getCopsCount', function(source, cb)
+    cb(GetCopsCount())
+end)
+
+QBCore.Functions.CreateCallback('t1ger_chopshop:hasCooldown', function(source, cb, cooldownType)
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then
+        cb(false)
+        return
+    end
+
+    local cooldownCfg = Config.ChopShop.Settings.cooldown[cooldownType]
+    if not cooldownCfg or not cooldownCfg.enable then
+        cb(false)
+        return
+    end
+
+    local bucket = cooldownType == 'scrap' and scrapCooldown or thiefCooldown
+    local identifier = player.PlayerData.citizenid
+    local expires = bucket[identifier]
+    if not expires then
+        cb(false)
+        return
+    end
+
+    local now = os.time()
+    if expires <= now then
+        bucket[identifier] = nil
+        cb(false)
+        return
+    end
+
+    local remaining = expires - now
+    local minutes = math.ceil(remaining / 60)
+    logSecurityEvent(source, player, 'attempt blocked by cooldown', ('type=%s remaining=%s'):format(cooldownType, minutes))
+    local messages = {
+        scrap = Lang['scrap_cooldown'],
+        thief = Lang['job_cooldown']
+    }
+    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', source, (messages[cooldownType] or Lang['scrap_cooldown']):format(minutes))
+    cb(true)
+end)
+
+local function addCooldown(src, cooldownType)
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return end
+    local cfg = Config.ChopShop.Settings.cooldown[cooldownType]
+    if not cfg or not cfg.enable then return end
+    local bucket = cooldownType == 'scrap' and scrapCooldown or thiefCooldown
+    bucket[player.PlayerData.citizenid] = os.time() + (cfg.timer * 60)
+end
+
+RegisterNetEvent('t1ger_chopshop:deleteOwnedVehicle', function(plate)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player or not plate then return end
+    local result = MySQL.single.await('SELECT citizenid FROM owned_vehicles WHERE plate = ?', { plate })
+    if result and result.citizenid == player.PlayerData.citizenid then
+        MySQL.update.await('DELETE FROM owned_vehicles WHERE plate = ?', { plate })
+        processedScrapPlates[plate] = nil
+    end
+end)
+
+RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player or type(scrapCar) ~= 'table' or type(scrapCar.hash) ~= 'number' then return end
+
+    percent = tonumber(percent) or 0
+    percent = math.min(math.max(percent, 0), 100)
+
+    cleanupProcessedPlates()
+    if plate then
+        plate = plate:gsub('%s+', ''):upper()
+        if processedScrapPlates[plate] then
+            logSecurityEvent(src, player, 'duplicate scrap attempt blocked', ('plate=%s'):format(plate))
+            return
         end
+    end
 
-	end)
+    local valid = false
+    for _, car in ipairs(carList) do
+        if car.hash == scrapCar.hash then
+            valid = true
+            break
+        end
+    end
+    if not valid then
+        for _, car in ipairs(Config.ScrapVehicles) do
+            if car.hash == scrapCar.hash then
+                valid = true
+                break
+            end
+        end
+    end
+    if not valid then return end
+
+    local cfg = Config.ChopShop.Settings.scrap_rewards
+    local money = math.floor((scrapCar.price or 0) * (percent / 100))
+    if cfg.cash.enable and money > 0 then
+        addMoney(player, money, cfg.cash.dirty, 't1ger-chopshop-scrap')
+        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['cash_reward']:format(money))
+    end
+
+    if cfg.items.enable then
+        local delivered = 0
+        for _, item in pairs(Config.Materials) do
+            if delivered >= cfg.items.maxItems then break end
+            if math.random(0, 100) <= item.chance then
+                local amount = math.random(item.amount.min, item.amount.max)
+                if player.Functions.AddItem(item.item, amount) then
+                    delivered = delivered + 1
+                end
+                Wait(50)
+            end
+        end
+    end
+
+    if plate then
+        processedScrapPlates[plate] = os.time() + 1800
+    end
+
+    if Config.ChopShop.Settings.cooldown.scrap.enable then
+        addCooldown(src, 'scrap')
+    end
 end)
 
--- Callback to get cops count:
-ESX.RegisterServerCallback('t1ger_chopshop:getCopsCount',function(source, cb)
-	local count = GetCopsCount()
-	cb(count)
+RegisterNetEvent('t1ger_chopshop:selectRiskGrade', function(grade)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return end
+
+    local selectedGrade
+    for _, data in pairs(Config.RiskGrades) do
+        if data.grade == grade then
+            selectedGrade = data
+            break
+        end
+    end
+    if not selectedGrade or not selectedGrade.enable then return end
+
+    if not Config.ChopShop.Police.allowCops then
+        for _, jobName in pairs(Config.ChopShop.Police.jobs) do
+            if player.PlayerData.job.name == jobName then
+                TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['police_not_allowed'])
+                return
+            end
+        end
+    end
+
+    if GetCopsCount() < selectedGrade.cops then
+        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['not_enough_police'])
+        return
+    end
+
+    local jobFee = selectedGrade.job_fees
+    if jobFee > 0 and not canAfford(player, jobFee, Config.ChopShop.Settings.jobFeesDirty) then
+        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['not_enough_money'])
+        return
+    end
+
+    if jobFee > 0 then
+        removeMoney(player, jobFee, Config.ChopShop.Settings.jobFeesDirty, 't1ger-chopshop-fee')
+    end
+
+    local vehicles = selectedGrade.vehicles
+    local veh = vehicles[math.random(1, #vehicles)]
+    activeThiefJobs[src] = { payout = veh.payout, hash = veh.hash }
+
+    TriggerClientEvent('t1ger_chopshop:BrowseAvailableJobs', src, 0, selectedGrade.grade, veh)
+    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['paid_for_job']:format(jobFee, selectedGrade.label))
 end)
 
--- Event to delete owned vehicle:
-RegisterServerEvent('t1ger_chopshop:deleteOwnedVehicle')
-AddEventHandler('t1ger_chopshop:deleteOwnedVehicle',function(plate)
-    MySQL.Async.execute('DELETE FROM owned_vehicles WHERE plate = @plate', {['@plate'] = plate})
-end)
-
--- Event for scrap vehicle payment:
-RegisterServerEvent('t1ger_chopshop:getPayment')
-AddEventHandler('t1ger_chopshop:getPayment',function(scrapCar, percent)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.ChopShop.Settings.scrap_rewards
-	-- Money Reward:
-	if cfg.cash.enable then
-		local money = math.floor(scrapCar.price * (percent/100))
-		if cfg.cash.dirty then xPlayer.addAccountMoney('black_money', money) else xPlayer.addMoney(money) end
-		TriggerClientEvent('t1ger_chopshop:ShowNotifyESX',source, Lang['cash_reward']:format(money))
-	end
-	-- Item Reward:
-	if cfg.items.enable then 
-		local i = 0
-		local maxItems = cfg.items.maxItems	
-		for k,v in pairs(Config.Materials) do
-			if i < maxItems then 
-				math.randomseed(GetGameTimer())
-				if math.random(0,100) <= v.chance then
-					math.randomseed(GetGameTimer())
-					local amount = math.random(v.amount.min,v.amount.max)
-					xPlayer.addInventoryItem(v.item, amount)
-					i = i + 1
-				end
-				Citizen.Wait(100)
-			else
-				break
-			end
-		end
-	end
-	-- cooldown:
-	if Config.ChopShop.Settings.cooldown.scrap.enable then 
-		TriggerEvent('t1ger_chopshop:addCooldown', xPlayer.source, 'scrap')
-	end
-end)
-
--- Server Event for selecting risk grade:
-RegisterServerEvent('t1ger_chopshop:selectRiskGrade')
-AddEventHandler('t1ger_chopshop:selectRiskGrade', function(label, grade, job_fees, cops, vehicles)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.ChopShop.Settings
-	local money = 0
-	if cfg.jobFeesDirty then money = xPlayer.getAccount('black_money').money else money = xPlayer.getMoney() end
-	if money >= job_fees then
-		local police = GetCopsCount()
-		if police >= cops then
-			if cfg.jobFeesDirty then xPlayer.removeAccountMoney('black_money', job_fees) else xPlayer.removeMoney(job_fees) end
-			local num = math.random(1, #vehicles)
-			local veh = vehicles[num]
-			TriggerClientEvent('t1ger_chopshop:BrowseAvailableJobs', xPlayer.source, 0, grade, veh)
-			TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', xPlayer.source, ((Lang['paid_for_job']):format(job_fees, label)))
-		else
-			TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', xPlayer.source, Lang['not_enough_police'])
-		end
-	else
-		TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', xPlayer.source, Lang['not_enough_money'])
-	end
-end)
-
--- Function to get cops count
 function GetCopsCount()
-	local cops = 0 
-	local xPlayers = ESX.GetExtendedPlayers()
-	local cops = 0
-	for i=1, #(xPlayers) do 
-		local xPlayer = xPlayers[i]
-		for k,v in pairs(Config.ChopShop.Police.jobs) do
-			if xPlayer['job']['name'] == v then cops = cops + 1 end
-		end
-	end
-	return cops
+    local cops = 0
+    for _, player in pairs(QBCore.Functions.GetQBPlayers()) do
+        for _, jobName in pairs(Config.ChopShop.Police.jobs) do
+            if player.PlayerData.job and player.PlayerData.job.name == jobName and (player.PlayerData.job.onduty ~= false) then
+                cops = cops + 1
+                break
+            end
+        end
+    end
+    return cops
 end
 
--- Sync Config accross all players:
-RegisterServerEvent('t1ger_chopshop:syncDataSV')
-AddEventHandler('t1ger_chopshop:syncDataSV',function(data)
+RegisterNetEvent('t1ger_chopshop:syncDataSV', function(data)
     TriggerClientEvent('t1ger_chopshop:syncDataCL', -1, data)
 end)
 
--- Server Event for Job Reward:
-RegisterServerEvent('t1ger_chopshop:JobCompleteSV')
-AddEventHandler('t1ger_chopshop:JobCompleteSV',function(payout, percent)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.ChopShop.Settings.thiefjob
-	-- Money Reward:
-	local money =  math.floor(payout*(percent/100))
-	if cfg.dirty then xPlayer.addAccountMoney('black_money', money) else xPlayer.addMoney(money) end
-	-- Item Reward:
-	if cfg.items.enable then 
-		local i = 0
-		local maxItems = cfg.items.maxItems	
-		for k,v in pairs(Config.Materials) do
-			if i < maxItems then 
-				math.randomseed(GetGameTimer())
-				if math.random(0,100) <= v.chance then
-					math.randomseed(GetGameTimer())
-					local amount = math.random(v.amount.min,v.amount.max)
-					xPlayer.addInventoryItem(v.item, amount)
-					i = i + 1
-				end
-				Citizen.Wait(100)
-			else
-				break
-			end
-		end
-	end
-	if Config.ChopShop.Settings.cooldown.thiefjob.enable then 
-		TriggerEvent('t1ger_chopshop:addCooldown', xPlayer.source, 'thief')
-	end
-	TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', xPlayer.source, ((Lang['reward_msg']):format(money)))
+RegisterNetEvent('t1ger_chopshop:JobCompleteSV', function(payout, percent)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return end
+
+    local jobData = activeThiefJobs[src]
+    if not jobData then
+        return
+    end
+
+    percent = tonumber(percent) or 0
+    percent = math.min(math.max(percent, 0), 100)
+
+    local basePayout = jobData.payout or payout or 0
+    local money = math.floor(basePayout * (percent / 100))
+    local cfg = Config.ChopShop.Settings.thiefjob
+
+    if money > 0 then
+        addMoney(player, money, cfg.dirty, 't1ger-chopshop-thief')
+    end
+
+    if cfg.items.enable then
+        local delivered = 0
+        for _, item in pairs(Config.Materials) do
+            if delivered >= cfg.items.maxItems then break end
+            if math.random(0, 100) <= item.chance then
+                local amount = math.random(item.amount.min, item.amount.max)
+                if player.Functions.AddItem(item.item, amount) then
+                    delivered = delivered + 1
+                end
+                Wait(50)
+            end
+        end
+    end
+
+    if Config.ChopShop.Settings.cooldown.thiefjob.enable then
+        addCooldown(src, 'thief')
+    end
+
+    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['reward_msg']:format(money))
+    activeThiefJobs[src] = nil
 end)
 
--- Event to trigger police notifications:
-RegisterServerEvent('t1ger_chopshop:PoliceNotifySV')
-AddEventHandler('t1ger_chopshop:PoliceNotifySV', function(targetCoords, streetName)
-	TriggerClientEvent('t1ger_chopshop:PoliceNotifyCL', -1, (Lang['police_notify']):format(streetName))
-	TriggerClientEvent('t1ger_chopshop:PoliceNotifyBlip', -1, targetCoords)
+RegisterNetEvent('t1ger_chopshop:PoliceNotifySV', function(targetCoords, streetName)
+    TriggerClientEvent('t1ger_chopshop:PoliceNotifyCL', -1, (Lang['police_notify']):format(streetName))
+    TriggerClientEvent('t1ger_chopshop:PoliceNotifyBlip', -1, targetCoords)
 end)
-
--- Thread for cooldown management:
-Citizen.CreateThread(function() -- do not touch this thread function!
-	while true do
-	Citizen.Wait(1000)
-		for k,v in pairs(scrap_cooldown) do
-			if v.time <= 0 then
-				ResetCooldown(v.identifier, 'scrap')
-			else
-				v.time = v.time - 1000
-			end
-		end
-		for k,v in pairs(thief_cooldown) do
-			if v.time <= 0 then
-				ResetCooldown(v.identifier, 'thief')
-			else
-				v.time = v.time - 1000
-			end
-		end
-	end
-end)
-
--- Server event to add cooldown:
-RegisterServerEvent('t1ger_chopshop:addCooldown')
-AddEventHandler('t1ger_chopshop:addCooldown',function(source, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.ChopShop.Settings.cooldown
-	if type == 'thief' then 
-		table.insert(thief_cooldown, {identifier = xPlayer.identifier, time = (cfg.thiefjob.time * 60000)})
-	elseif type == 'scrap' then 
-		table.insert(scrap_cooldown, {identifier = xPlayer.identifier, time = (cfg.scrap.time * 60000)})
-	end
-end)
-
--- Callback to get cooldown timer:
-ESX.RegisterServerCallback('t1ger_chopshop:hasCooldown', function(source, cb, type)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if not CheckCooldownTimer(xPlayer.identifier, type) then
-		cb(false)
-	else
-		local msg = Lang['job_cooldown']; if type == 'scrap' then msg = Lang['scrap_cooldown'] end
-		TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', xPlayer.source, msg:format(GetCooldownTimer(xPlayer.identifier), type))
-		cb(true)
-	end
-end)
-
--- Functions for Cooldown:
-function ResetCooldown(source, type)
-	if type == 'thief' then 
-		for k,v in pairs(thief_cooldown) do
-			if v.identifier == source then
-				table.remove(thief_cooldown, k)
-			end
-		end
-	elseif type == 'scrap' then
-		for k,v in pairs(scrap_cooldown) do
-			if v.identifier == source then
-				table.remove(scrap_cooldown, k)
-			end
-		end
-	end
-end
-function GetCooldownTimer(source, type)
-	if type == 'thief' then 
-		for k,v in pairs(thief_cooldown) do
-			if v.identifier == source then
-				return math.ceil(v.time/60000)
-			end
-		end
-	elseif type == 'scrap' then
-		for k,v in pairs(scrap_cooldown) do
-			if v.identifier == source then
-				return math.ceil(v.time/60000)
-			end
-		end
-	end
-end
-function CheckCooldownTimer(source, type)
-	if type == 'thief' then 
-		for k,v in pairs(thief_cooldown) do
-			if v.identifier == source then
-				return true
-			end
-		end
-		return false
-	elseif type == 'scrap' then
-		for k,v in pairs(scrap_cooldown) do
-			if v.identifier == source then
-				return true
-			end
-		end
-		return false
-	end
-end

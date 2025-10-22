@@ -11,18 +11,22 @@ discord 'https://discord.gg/FdHkq5q'
 description 'T1GER Keys'
 version '1.0.8'
 
+shared_scripts {
+        '@ox_lib/init.lua'
+}
+
 client_scripts {
-	'language.lua',
-	'config.lua',
+        'language.lua',
+        'config.lua',
 	'client/main.lua',
 	'client/utils.lua'
 }
 
 server_scripts {
-	'@mysql-async/lib/MySQL.lua',
-	'language.lua',
-	'config.lua',
-	'server/main.lua'
+        '@oxmysql/lib/MySQL.lua',
+        'language.lua',
+        'config.lua',
+        'server/main.lua'
 }
 
 exports {

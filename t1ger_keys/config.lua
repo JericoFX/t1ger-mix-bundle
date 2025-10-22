@@ -3,7 +3,6 @@
 ------------------------------------- 
 
 Config = {
-    ESX_OBJECT          = 'esx:getSharedObject',    -- set your shared object event in here
     ProgressBars        = true,                     -- set to false if you do not use progressBars or using your own
     T1GER_Insurance     = true,                     -- set to false if you dont own/use insurance.
 

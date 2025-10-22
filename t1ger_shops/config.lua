@@ -4,19 +4,18 @@
 
 -- General:
 Config = {
-    ESX_OBJECT = 'esx:getSharedObject', -- set your shared object event in here
-	Debug = true, -- allows you to restart script while in-game, otherwise u need to restart server.
-    ProgressBars = true, -- set to false if you do not use progressBars or using your own
-	T1GER_Deliveries = true, -- true/false whether you own or not own t1ger-shops
-	BuyShopWithBank = true, -- buy shop with bank money, false = cash.
-	SalePercentage = 0.75, -- sell percentage when selling a shop.
-	AccountsInBank = true, -- Set to false to deposit/withdraw money into and from shop account with cash-money instead of bank-money.
-	ItemWeightSystem = false, -- Set this to true if you are using weight instead of limit.
-	WeaponLoadout = true, -- Set this to false if you are using weapons as items.
-	BasketCommand = 'basket', -- Default command to open/view basket.
-	ShelfCommand = 'shelf', -- Default command to open shelf management menu
-	ItemCompatibility = true, -- If disabled, it doesnt check for type compatibility in Config.Items, meaning weapon shop owner could add bread, redgull etc.
-	OrderItemPercent = 25, -- Set percent between 1 and 100 of how much of the default item price is reduced, when ordering stock.
+        Debug = true, -- allows you to restart script while in-game, otherwise u need to restart server.
+        ProgressBars = true, -- set to false if you do not use progressBars or using your own
+        T1GER_Deliveries = true, -- true/false whether you own or not own t1ger-shops
+        BuyShopWithBank = true, -- buy shop with bank money, false = cash.
+        SalePercentage = 0.75, -- sell percentage when selling a shop.
+        AccountsInBank = true, -- Set to false to deposit/withdraw money into and from shop account with cash-money instead of bank-money.
+        ItemWeightSystem = false, -- Set this to true if you are using weight instead of limit.
+        WeaponLoadout = true, -- Set this to false if you are using weapons as items.
+        BasketCommand = 'basket', -- Default command to open/view basket.
+        ShelfCommand = 'shelf', -- Default command to open shelf management menu
+        ItemCompatibility = true, -- If disabled, it doesnt check for type compatibility in Config.Items, meaning weapon shop owner could add bread, redgull etc.
+        OrderItemPercent = 25, -- Set percent between 1 and 100 of how much of the default item price is reduced, when ordering stock.
 }
 
 -- Blip Settings:
@@ -82,44 +81,35 @@ Config.SocietySettings = {
 	grades    = false, -- boss can adjust all salaries for each job grade
 }
 
-Config.Society = { -- requires esx_society (set settings for what boss can do in each dealerships)
-	['shop1'] = {
-		-- register society:
-		name = 'shop1', -- job name 
-		label = 'Shop', -- job label
-		account = 'society_shop1', -- society account
-		datastore = 'society_shop1', -- society datastore
-		inventory = 'society_shop1', -- society inventory
-		boss_grade = 2, -- boss grade number to apply upon purchase
-		data = {type = 'private'},
-	},
-	['shop2']  = { name = 'shop2', label = 'Shop', account = 'society_shop2', datastore = 'society_shop2', inventory = 'society_shop2', boss_grade = 2, data = {type = 'private'} },
-	['shop3']  = { name = 'shop3', label = 'Shop', account = 'society_shop3', datastore = 'society_shop3', inventory = 'society_shop3', boss_grade = 2, data = {type = 'private'} },
-	['shop4']  = { name = 'shop4', label = 'Shop', account = 'society_shop4', datastore = 'society_shop4', inventory = 'society_shop4', boss_grade = 2, data = {type = 'private'} },
-	['shop5']  = { name = 'shop5', label = 'Shop', account = 'society_shop5', datastore = 'society_shop5', inventory = 'society_shop5', boss_grade = 2, data = {type = 'private'} },
-	['shop6']  = { name = 'shop6', label = 'Shop', account = 'society_shop6', datastore = 'society_shop6', inventory = 'society_shop6', boss_grade = 2, data = {type = 'private'} },
-	['shop7']  = { name = 'shop7', label = 'Shop', account = 'society_shop7', datastore = 'society_shop7', inventory = 'society_shop7', boss_grade = 2, data = {type = 'private'} },
-	['shop8']  = { name = 'shop8', label = 'Shop', account = 'society_shop8', datastore = 'society_shop8', inventory = 'society_shop8', boss_grade = 2, data = {type = 'private'} },
-	['shop9']  = { name = 'shop9', label = 'Shop', account = 'society_shop9', datastore = 'society_shop9', inventory = 'society_shop9', boss_grade = 2, data = {type = 'private'} },
-	['shop10']  = { name = 'shop10', label = 'Shop', account = 'society_shop10', datastore = 'society_shop10', inventory = 'society_shop10', boss_grade = 2, data = {type = 'private'} },
-	['shop11']  = { name = 'shop11', label = 'Shop', account = 'society_shop11', datastore = 'society_shop11', inventory = 'society_shop11', boss_grade = 2, data = {type = 'private'} },
-	['shop12']  = { name = 'shop12', label = 'Shop', account = 'society_shop12', datastore = 'society_shop12', inventory = 'society_shop12', boss_grade = 2, data = {type = 'private'} },
-	['shop13']  = { name = 'shop13', label = 'Shop', account = 'society_shop13', datastore = 'society_shop13', inventory = 'society_shop13', boss_grade = 2, data = {type = 'private'} },
-	['shop14']  = { name = 'shop14', label = 'Shop', account = 'society_shop14', datastore = 'society_shop14', inventory = 'society_shop14', boss_grade = 2, data = {type = 'private'} },
-	['shop15']  = { name = 'shop15', label = 'Shop', account = 'society_shop15', datastore = 'society_shop15', inventory = 'society_shop15', boss_grade = 2, data = {type = 'private'} },
-	['shop16']  = { name = 'shop16', label = 'Shop', account = 'society_shop16', datastore = 'society_shop16', inventory = 'society_shop16', boss_grade = 2, data = {type = 'private'} },
-	['shop17']  = { name = 'shop17', label = 'Shop', account = 'society_shop17', datastore = 'society_shop17', inventory = 'society_shop17', boss_grade = 2, data = {type = 'private'} },
-	['shop18']  = { name = 'shop18', label = 'Shop', account = 'society_shop18', datastore = 'society_shop18', inventory = 'society_shop18', boss_grade = 2, data = {type = 'private'} },
-	['shop19']  = { name = 'shop19', label = 'Shop', account = 'society_shop19', datastore = 'society_shop19', inventory = 'society_shop19', boss_grade = 2, data = {type = 'private'} },
-	['shop20']  = { name = 'shop20', label = 'Shop', account = 'society_shop20', datastore = 'society_shop20', inventory = 'society_shop20', boss_grade = 2, data = {type = 'private'} },
-	['shop21']  = { name = 'shop21', label = 'Shop', account = 'society_shop21', datastore = 'society_shop21', inventory = 'society_shop21', boss_grade = 2, data = {type = 'private'} },
-	['shop22']  = { name = 'shop22', label = 'Shop', account = 'society_shop22', datastore = 'society_shop22', inventory = 'society_shop22', boss_grade = 2, data = {type = 'private'} },
-	['shop23']  = { name = 'shop23', label = 'Shop', account = 'society_shop23', datastore = 'society_shop23', inventory = 'society_shop23', boss_grade = 2, data = {type = 'private'} },
-	['shop24']  = { name = 'shop24', label = 'Shop', account = 'society_shop24', datastore = 'society_shop24', inventory = 'society_shop24', boss_grade = 2, data = {type = 'private'} },
-	['shop25']  = { name = 'shop25', label = 'Shop', account = 'society_shop25', datastore = 'society_shop25', inventory = 'society_shop25', boss_grade = 2, data = {type = 'private'} },
-	['shop26']  = { name = 'shop26', label = 'Shop', account = 'society_shop26', datastore = 'society_shop26', inventory = 'society_shop26', boss_grade = 2, data = {type = 'private'} },
-	['shop27']  = { name = 'shop27', label = 'Shop', account = 'society_shop27', datastore = 'society_shop27', inventory = 'society_shop27', boss_grade = 2, data = {type = 'private'} },
-	['shop28']  = { name = 'shop28', label = 'Shop', account = 'society_shop28', datastore = 'society_shop28', inventory = 'society_shop28', boss_grade = 2, data = {type = 'private'} },
+Config.Society = {
+        ['shop1'] = { job = 'shop1', label = 'Shop', account = 'shop1', boss_grade = 2, data = { type = 'private' } },
+        ['shop2'] = { job = 'shop2', label = 'Shop', account = 'shop2', boss_grade = 2, data = { type = 'private' } },
+        ['shop3'] = { job = 'shop3', label = 'Shop', account = 'shop3', boss_grade = 2, data = { type = 'private' } },
+        ['shop4'] = { job = 'shop4', label = 'Shop', account = 'shop4', boss_grade = 2, data = { type = 'private' } },
+        ['shop5'] = { job = 'shop5', label = 'Shop', account = 'shop5', boss_grade = 2, data = { type = 'private' } },
+        ['shop6'] = { job = 'shop6', label = 'Shop', account = 'shop6', boss_grade = 2, data = { type = 'private' } },
+        ['shop7'] = { job = 'shop7', label = 'Shop', account = 'shop7', boss_grade = 2, data = { type = 'private' } },
+        ['shop8'] = { job = 'shop8', label = 'Shop', account = 'shop8', boss_grade = 2, data = { type = 'private' } },
+        ['shop9'] = { job = 'shop9', label = 'Shop', account = 'shop9', boss_grade = 2, data = { type = 'private' } },
+        ['shop10'] = { job = 'shop10', label = 'Shop', account = 'shop10', boss_grade = 2, data = { type = 'private' } },
+        ['shop11'] = { job = 'shop11', label = 'Shop', account = 'shop11', boss_grade = 2, data = { type = 'private' } },
+        ['shop12'] = { job = 'shop12', label = 'Shop', account = 'shop12', boss_grade = 2, data = { type = 'private' } },
+        ['shop13'] = { job = 'shop13', label = 'Shop', account = 'shop13', boss_grade = 2, data = { type = 'private' } },
+        ['shop14'] = { job = 'shop14', label = 'Shop', account = 'shop14', boss_grade = 2, data = { type = 'private' } },
+        ['shop15'] = { job = 'shop15', label = 'Shop', account = 'shop15', boss_grade = 2, data = { type = 'private' } },
+        ['shop16'] = { job = 'shop16', label = 'Shop', account = 'shop16', boss_grade = 2, data = { type = 'private' } },
+        ['shop17'] = { job = 'shop17', label = 'Shop', account = 'shop17', boss_grade = 2, data = { type = 'private' } },
+        ['shop18'] = { job = 'shop18', label = 'Shop', account = 'shop18', boss_grade = 2, data = { type = 'private' } },
+        ['shop19'] = { job = 'shop19', label = 'Shop', account = 'shop19', boss_grade = 2, data = { type = 'private' } },
+        ['shop20'] = { job = 'shop20', label = 'Shop', account = 'shop20', boss_grade = 2, data = { type = 'private' } },
+        ['shop21'] = { job = 'shop21', label = 'Shop', account = 'shop21', boss_grade = 2, data = { type = 'private' } },
+        ['shop22'] = { job = 'shop22', label = 'Shop', account = 'shop22', boss_grade = 2, data = { type = 'private' } },
+        ['shop23'] = { job = 'shop23', label = 'Shop', account = 'shop23', boss_grade = 2, data = { type = 'private' } },
+        ['shop24'] = { job = 'shop24', label = 'Shop', account = 'shop24', boss_grade = 2, data = { type = 'private' } },
+        ['shop25'] = { job = 'shop25', label = 'Shop', account = 'shop25', boss_grade = 2, data = { type = 'private' } },
+        ['shop26'] = { job = 'shop26', label = 'Shop', account = 'shop26', boss_grade = 2, data = { type = 'private' } },
+        ['shop27'] = { job = 'shop27', label = 'Shop', account = 'shop27', boss_grade = 2, data = { type = 'private' } },
+        ['shop28'] = { job = 'shop28', label = 'Shop', account = 'shop28', boss_grade = 2, data = { type = 'private' } },
 }
 
 -- Shop Items:

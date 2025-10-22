@@ -1,725 +1,479 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-local ESX = exports['es_extended']:getSharedObject()
-
-Citizen.CreateThread(function ()
-    while GetResourceState('mysql-async') ~= 'started' do Citizen.Wait(0) end
-    while GetResourceState(GetCurrentResourceName()) ~= 'started' do Citizen.Wait(0) end
-    if GetResourceState(GetCurrentResourceName()) == 'started' then InitializeShops() end
-end)
-
-local jobGrades = {
-	[1] = { name = 'apprentice', label = 'Apprentice', salary = 100},
-	[2] = { name = 'clerk', label = 'Clerk', salary = 200},
-	[3] = { name = 'boss', label = 'Owner', salary = 300},
-}
-
-Citizen.CreateThread(function()
-    for k,v in pairs(Config.Society) do
-		MySQL.Async.fetchAll("SELECT * FROM jobs WHERE name = @name", {['@name'] = v.name}, function(results)
-			if not results[1] then 
-				-- addon account:
-				MySQL.Async.execute('INSERT IGNORE INTO addon_account (name, label, shared) VALUES (@name, @label, @shared)', { ['name'] = v.account, ['label'] = v.label, ['shared'] = 1 } )
-				-- addon account data:
-				MySQL.Async.execute('INSERT IGNORE INTO addon_account_data (account_name, money) VALUES (@account_name, @money)', { ['account_name'] = v.account, ['money'] = 0 } )
-				-- jobs:
-				MySQL.Async.execute('INSERT IGNORE INTO jobs (name, label) VALUES (@name, @label)', { ['name'] = v.name, ['label'] = v.label } )
-				-- job grades:
-				for i = 0, 2, 1 do
-					MySQL.Async.execute('INSERT IGNORE INTO job_grades (job_name, grade, name, label, salary) VALUES (@job_name, @grade, @name, @label, @salary)', {
-						['job_name'] = v.name,
-						['grade'] = i,
-						['name'] = jobGrades[i+1].name,
-						['label'] = jobGrades[i+1].label,
-						['salary'] = jobGrades[i+1].salary
-					})
-				end
-				print("Job: "..v.name.." added to database, please restart server to load ESX.Jobs")
-			end
-		end)
-        TriggerEvent('esx_society:registerSociety', v.name, v.label, v.account, v.datastore, v.inventory, v.data)
-    end
-end)
+local QBCore = exports['qb-core']:GetCoreObject()
 
 local shops = {}
-function InitializeShops()
-	Citizen.Wait(1000)
-	MySQL.Async.fetchAll('SELECT * FROM t1ger_shops', {}, function(results)
-		if next(results) then
-			for i = 1, #results do
-				local data = {
-					identifier = results[i].identifier,
-					id = results[i].id,
-					stock = nil or json.decode(results[i].stock),
-					shelves = nil or json.decode(results[i].shelves)
-				}
-				shops[results[i].id] = data
-				Config.Shops[results[i].id].owned = true
-				Config.Shops[results[i].id].data = data
-				Citizen.Wait(5)
-			end
-		end
-	end)
-	RconPrint('T1GER Shops Initialized\n')
+
+local function dbFetch(query, params)
+        local p = promise.new()
+        MySQL.Async.fetchAll(query, params or {}, function(result)
+                p:resolve(result or {})
+        end)
+        return Citizen.Await(p)
 end
 
-AddEventHandler('esx:playerLoaded', function(playerId)
-	local xPlayer = ESX.GetPlayerFromId(playerId)
-	while not xPlayer do Citizen.Wait(100) end
-    LoadShops(xPlayer.source)
-end)
+local function dbExecute(query, params)
+        local p = promise.new()
+        MySQL.Async.execute(query, params or {}, function(result)
+                p:resolve(result)
+        end)
+        return Citizen.Await(p)
+end
 
-RegisterServerEvent('t1ger_shops:debugSV')
-AddEventHandler('t1ger_shops:debugSV', function()
-    LoadShops(source)
-end)
+local function comma_value(n)
+        local left, num, right = tostring(n):match('^([^%d]*%d)(%d*)(.-)$')
+        return left .. (num:reverse():gsub('(%d%d%d)','%1,'):reverse()) .. right
+end
 
-function LoadShops(src)
-    local xPlayer = ESX.GetPlayerFromId(src)
-	while not xPlayer do Citizen.Wait(100) end
-    local isOwner, shopID = 0, 0
-    if next(shops) then 
-        for k,v in pairs(shops) do
-            if xPlayer.identifier == v.identifier then
-                isOwner = v.id
-            end 
-            local currentJob = xPlayer.getJob()
-            if currentJob.name == Config.Society[Config.Shops[v.id].society].name then
-                shopID = v.id
-            end
+local function resetShopConfig()
+        for id, cfg in pairs(Config.Shops) do
+                cfg.owned = false
+                cfg.data = cfg.data or { id = id, stock = {}, shelves = {} }
+                cfg.data.stock = cfg.data.stock or {}
+                cfg.data.shelves = cfg.data.shelves or {}
         end
-    end
-	TriggerClientEvent('t1ger_shops:loadShops', xPlayer.source, shops, Config.Shops, isOwner, shopID)
 end
 
--- Callback to check money & purchase shop:
-ESX.RegisterServerCallback('t1ger_shops:purchaseShop',function(source, cb, id, val)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local money = 0
-    if Config.BuyShopWithBank then money = xPlayer.getAccount('bank').money else money = xPlayer.getMoney() end
-	if money >= val.price then
-		if Config.BuyShopWithBank then xPlayer.removeAccountMoney('bank', val.price) else xPlayer.removeMoney(val.price) end
-        local employees, stock, shelves = {}, {}, {}
-        MySQL.Async.execute('INSERT INTO t1ger_shops (identifier, id, stock, shelves) VALUES (@identifier, @id, @stock, @shelves)', {
-            ['identifier'] = xPlayer.identifier,
-            ['id'] = id,
-            ['stock'] = json.encode(stock),
-            ['shelves'] = json.encode(shelves),
+local function loadShops()
+        resetShopConfig()
+        local results = dbFetch('SELECT * FROM t1ger_shops', {})
+        for _, row in ipairs(results) do
+                local stock = row.stock and json.decode(row.stock) or {}
+                local shelves = row.shelves and json.decode(row.shelves) or {}
+                shops[row.id] = {
+                        id = row.id,
+                        citizenid = row.citizenid or row.identifier,
+                        stock = stock,
+                        shelves = shelves
+                }
+                if Config.Shops[row.id] then
+                        Config.Shops[row.id].owned = true
+                        Config.Shops[row.id].data = shops[row.id]
+                end
+        end
+end
+
+local function saveShop(id)
+        local data = shops[id]
+        if not data then return end
+        dbExecute('UPDATE t1ger_shops SET stock = ?, shelves = ? WHERE id = ?', {
+                json.encode(data.stock or {}),
+                json.encode(data.shelves or {}),
+                id
         })
-		xPlayer.setJob(Config.Society[val.society].name, Config.Society[val.society].boss_grade)
-        cb(true)
-    else
-        cb(false)
-    end
-end)
+end
 
--- Event to sell shop:
-RegisterServerEvent('t1ger_shops:sellShop')
-AddEventHandler('t1ger_shops:sellShop', function(id, val, amount)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    MySQL.Async.execute('DELETE FROM t1ger_shops WHERE id = @id', {['@id'] = id}) 
-    if Config.BuyShopWithBank then xPlayer.addAccountMoney('bank', amount) else xPlayer.addMoney(amount) end
-	xPlayer.setJob('unemployed', 0)
-end)
+local function broadcastShop(id)
+        if not Config.Shops[id] then return end
+        TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
+end
 
--- Update & Sync Shops:
-RegisterServerEvent('t1ger_shops:updateShops')
-AddEventHandler('t1ger_shops:updateShops', function(num, val, state)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local data = nil
-	if state == true then
-		local d1, d2 = json.decode('[]'), json.decode('[]')
-		data = {identifier = xPlayer.identifier, id = num, stock = d1, shelves = d2}
-		shops[num] = data
-	else
-		shops[num] = nil
-	end
-	Config.Shops[num].owned = state
-	Config.Shops[num].data = data
-	TriggerClientEvent('t1ger_shops:syncShops', -1, shops, Config.Shops)
-end)
-
--- Get player money:
-ESX.RegisterServerCallback('t1ger_shops:getPlayerMoney',function(source, cb, price, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local money = 0
-    if type == 'button_cash' then money = xPlayer.getMoney() elseif type == 'button_card' then money = xPlayer.getAccount('bank').money end
-    if price < 0 then
-		print('t1ger_shops: ' .. xPlayer.identifier .. ' attempted to exploit the shop!')
-		return
-    end
-	if money >= price then cb(true) else cb(false) end
-end)
-
--- Get player inventory limit:
-ESX.RegisterServerCallback('t1ger_shops:getPlayerInvLimit',function(source, cb, data)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local limitExceed, DataFetched = false, false
-	if #data > 0 then 
-		for k,v in pairs(data) do
-            local invItem = xPlayer.getInventoryItem(v.item)
-			if invItem ~= nil then 
-                if v.str_match == nil then 
-					if Config.ItemWeightSystem == true then
-						if not xPlayer.canCarryItem(v.item, v.count) then 
-							limitExceed = true
-							TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_limit_exceed']:format(v.label,invItem.weight))
-						end
-					else
-						if (invItem.count + v.count) > invItem.limit then
-							limitExceed = true
-							TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_limit_exceed']:format(v.label,invItem.limit))
-						end
-					end
-				end
-			else
-				return print('ITEM '..data.item..' DOES NOT EXIST IN DATABASE')
-			end
-            if k == #data then
-				DataFetched = true
-			end
-		end
-	else
-        local invItem = xPlayer.getInventoryItem(data.item)
-		if invItem ~= nil then 
-			if Config.ItemWeightSystem == true then
-				if not xPlayer.canCarryItem(data.item, data.value) then 
-					TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_limit_exceed']:format(data.name,invItem.weight))
-					limitExceed = true
-				end
-			else
-				if (invItem.count + data.value) > invItem.limit then
-					TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_limit_exceed']:format(data.name,invItem.limit))
-					limitExceed = true
-				end
-			end
-			DataFetched = true
-		else
-			return print('ITEM '..data.item..' DOES NOT EXIST IN DATABASE')
-		end
-	end
-    while not DataFetched do
-		Citizen.Wait(10)
-	end
-	if limitExceed then 
-		cb(true) 
-	else 
-		cb(false) 
-	end
-end)
-
--- function to purchase selected item:
-RegisterServerEvent('t1ger_shops:purchaseItem')
-AddEventHandler('t1ger_shops:purchaseItem', function(item, price, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if type == 'button_cash' then xPlayer.removeMoney(price) elseif type == 'button_card' then xPlayer.removeAccountMoney('bank', price) end
-    xPlayer.addInventoryItem(item.item, item.value)
-    TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_purchased']:format(item.value,item.name,price))
-end)
-
-
--- function to purchase basket items:
-RegisterServerEvent('t1ger_shops:checkoutBasket')
-AddEventHandler('t1ger_shops:checkoutBasket', function(basket, type, id)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	-- Remove Money:
-    if type == 'button_cash' then xPlayer.removeMoney(basket.bill) elseif type == 'button_card' then xPlayer.removeAccountMoney('bank', basket.bill) end
-	-- Add Items / Weapons:
-    for k,v in pairs(basket.items) do 
-        if v.str_match ~= nil then
-            if v.str_match == "weapon" then
-                xPlayer.addWeapon(v.item, v.count)
-            elseif v.str_match == "ammo" then
-                TriggerClientEvent('t1ger_shops:addAmmoClient', xPlayer.source, v.weapon, v.count)
-            end
-        else
-            xPlayer.addInventoryItem(v.item, v.count)
+local function sendShopsToPlayer(src)
+        local Player = QBCore.Functions.GetPlayer(src)
+        if not Player then return end
+        local citizenid = Player.PlayerData.citizenid
+        local job = Player.PlayerData.job
+        local ownedId, jobId = 0, 0
+        for id, data in pairs(shops) do
+                if data.citizenid == citizenid then
+                        ownedId = id
+                end
+                local cfg = Config.Shops[id]
+                if cfg then
+                        local society = Config.Society[cfg.society]
+                        if society and job and job.name == society.job then
+                                jobId = id
+                        end
+                end
         end
-    end
-	-- Update Shop Stock:
-	if next(shops[id].stock) then
-		for k,v in pairs(shops[id].stock) do
-			if v.qty == 0 or v.qty <= 0 then
-				table.remove(shops[id].stock, k)
-			end
-		end
-	end
-	-- Update Society Account:
-	TriggerEvent('esx_addonaccount:getSharedAccount', Config.Society[Config.Shops[id].society].account, function(account)
-		account.addMoney(basket.bill)
-	end)
-	-- Sync to Database and Clients:
-	MySQL.Async.execute("UPDATE t1ger_shops SET stock = @stock WHERE id = @id", { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-	Config.Shops[id].data = shops[id]
-	TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-    TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['basket_paid']:format(basket.bill))
-end)
-
--- Empty Shop Basket:
-RegisterServerEvent('t1ger_shops:emptyShopBasket')
-AddEventHandler('t1ger_shops:emptyShopBasket', function(id, shopBasket)
-    local LoopDone = false
-	if next(shops[id].stock) then 
-		for k,v in pairs(shops[id].stock) do 
-			for _,y in pairs(shopBasket) do 
-				if y.item == v.item then
-					v.qty = (v.qty + y.count)
-				end
-			end
-			if k == #shops[id].stock then 
-				LoopDone = true
-			end
-		end
-		while not LoopDone do 
-			Citizen.Wait(10)
-		end
-		-- Update Database:
-		MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-		-- Sync:
-		Config.Shops[id].data = shops[id]
-		TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-	end
-end)
-
--- Remove Item from Shop Basket:
-RegisterServerEvent('t1ger_shops:removeBasketItem')
-AddEventHandler('t1ger_shops:removeBasketItem', function(id, item)
-	if next(shops[id].stock) then 
-		for k,v in pairs(shops[id].stock) do 
-			if item.item == v.item then 
-				v.qty = (v.qty + item.count)
-				-- Update Database:
-				MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-				-- Sync:
-				Config.Shops[id].data = shops[id]
-				TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-				break
-			end
-		end
-	end
-end)
-
--- Update shelves (add / remove):
-RegisterServerEvent('t1ger_shops:updateShelves')
-AddEventHandler('t1ger_shops:updateShelves', function(id, data, addBoolean)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	if next(shops[id].shelves) then 
-		if addBoolean then 
-			table.insert(shops[id].shelves, data)
-		else
-			for k,v in pairs(shops[id].shelves) do
-				if data.type == v.type and data.drawText == v.drawText then
-					table.remove(shops[id].shelves, k)
-				end
-			end
-		end
-	else
-		table.insert(shops[id].shelves, data)
-	end
-
-    -- Update Database:
-    MySQL.Async.execute('UPDATE t1ger_shops SET shelves = @shelves WHERE id = @id', { ['@shelves'] = json.encode(shops[id].shelves), ['@id'] = id })
-	-- Sync:
-	Config.Shops[id].data = shops[id]
-	TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-end)
-
--- Fetch shelves from ply shop:
-ESX.RegisterServerCallback('t1ger_shops:fetchShelves',function(source, cb, id)
-	cb(shops[id].shelves)
-end)
-
-
--- Get User Inventory:
-ESX.RegisterServerCallback('t1ger_shops:getUserInventory', function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local inventoryItems = xPlayer.inventory
-    cb(inventoryItems)
-end)
-
-ESX.RegisterServerCallback('t1ger_shops:doesItemExists', function(source, cb, id, item, shelf_type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	if next(shops[id].stock) then
-		for k,v in pairs(shops[id].stock) do
-			if item == v.item then
-				cb(true)
-				break
-			end
-			if k == #shops[id].stock then 
-				cb(false)
-			end
-		end
-	else
-		cb(nil)
-	end
-end)
-
--- Fetch Shelf Item Stock:
-ESX.RegisterServerCallback('t1ger_shops:getItemStock', function(source, cb, id)
-    cb(shops[id].stock)
-end)
-
--- Update item price in shelf:
-RegisterServerEvent('t1ger_shops:updateItemPrice')
-AddEventHandler('t1ger_shops:updateItemPrice', function(id, shelf, item, price)
-	if next(shops[id].stock) then 
-		for k,v in pairs(shops[id].stock) do 
-			if item == v.item and shelf == v.type then
-				v.price = price
-				-- Update Database:
-				MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-				-- Sync:
-				Config.Shops[id].data = shops[id]
-				TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-				break
-			end
-		end
-	end
-end)
-
--- Restock items in shelf:
-RegisterServerEvent('t1ger_shops:itemDeposit')
-AddEventHandler('t1ger_shops:itemDeposit', function(item, amount, price, id, shelf)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local restock_item, itemAdded, itemMatch, itemName = item, false, false, ''
-
-	local invItem = xPlayer.getInventoryItem(restock_item)
-	if invItem ~= nil then 
-		if invItem.count >= amount then
-			if next(shops[id].stock) then
-				for i = 1, #shops[id].stock do
-					if restock_item == shops[id].stock[i].item and shelf.type == shops[id].stock[i].type then
-						shops[id].stock[i].qty = (shops[id].stock[i].qty + amount)
-						itemAdded = true
-						itemMatch = true
-						break
-					else
-						if i == #shops[id].stock then 
-							itemAdded = true
-							break
-						end
-					end
-				end
-			else
-				itemAdded = true
-			end
-			while not itemAdded do
-				Citizen.Wait(10)
-			end
-
-			if not itemMatch then
-				table.insert(shops[id].stock, {item = restock_item, qty = amount, label = invItem.label, price = price, type = shelf.type}) 
-			end
-
-			-- Update Database:
-			MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-			-- Sync:
-			Config.Shops[id].data = shops[id]
-			TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-			-- Remove Inv Item:
-			xPlayer.removeInventoryItem(restock_item, amount)
-			TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['shelf_item_deposit']:format(amount, itemName))
-		else
-			TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['not_enough_items'])
-		end
-	else
-		return print('ITEM '..data.item..' DOES NOT EXIST IN DATABASE')
-	end
-end)
-
--- Remove items from shelf:
-RegisterServerEvent('t1ger_shops:itemWithdraw')
-AddEventHandler('t1ger_shops:itemWithdraw', function(item, label, amount, id, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	if next(shops[id].stock) then
-		for k,v in pairs(shops[id].stock) do
-			if item == v.item and type == v.type then
-				if tonumber(v.qty) == tonumber(amount) then
-					table.remove(shops[id].stock, k)
-				else
-					v.qty = (v.qty - amount)
-				end
-				-- Update Database:
-				MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-				-- Sync:
-				Config.Shops[id].data = shops[id]
-				TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-				-- Add item:
-				xPlayer.addInventoryItem(item, amount)
-				TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['shelf_item_withdraw']:format(amount, label))
-			end
-		end
-	end
-end)
-
--- Update item stock when added to basket:
-ESX.RegisterServerCallback('t1ger_shops:updateItemStock', function(source, cb, id, item, amount)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	if next(shops[id].stock) then
-		for k,v in pairs(shops[id].stock) do
-			if item == v.item then
-				if amount <= v.qty then
-					v.qty = (v.qty - amount)
-					-- Update Database:
-					MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-					-- Sync:
-					Config.Shops[id].data = shops[id]
-					TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-					cb(true)
-				else
-					cb(false)
-				end
-				break
-			end
-		end
-	end
-end)
-
--- Pay for stock order
-ESX.RegisterServerCallback('t1ger_shops:payStockOrder',function(source, cb, id, orderPrice)
-	TriggerEvent('esx_addonaccount:getSharedAccount', Config.Society[Config.Shops[id].society].account, function(account)
-		if account.money >= orderPrice then
-			account.removeMoney(orderPrice)
-			cb(true)
-		else
-			cb(false)
-		end
-	end)
-end)
-
--- Create Order:
-RegisterServerEvent('t1ger_shops:createOrder')
-AddEventHandler('t1ger_shops:createOrder', function(id, itemLabel, orderItem, orderStrMatch, orderAmount, orderItemPrice, orderCost, shelf_type)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local order = {}
-	local data = {item = orderItem, qty = orderAmount, label = itemLabel, price = orderItemPrice, str_match = orderStrMatch, type = shelf_type}
-	local done = false
-	MySQL.Async.fetchAll("SELECT * FROM t1ger_orders WHERE shopID = @shopID AND taken = @taken", {['@shopID'] = id, ['@taken'] = false}, function(results)
-		if results[1] then
-			order = json.decode(results[1].data)
-			if next(order) then
-				for k,v in pairs(order) do
-					if v.item == data.item and v.type == data.type then
-						v.qty = (v.qty + data.qty)
-						break
-					else
-						if k == #order then 
-							table.insert(order, data)
-							break
-						end
-					end
-				end
-			else
-				table.insert(order, data)
-			end
-			MySQL.Async.execute('UPDATE t1ger_orders SET data = @data, cost = @cost WHERE shopID = @shopID AND id = @id', {
-				['id'] = results[1].id,
-				['shopID'] = results[1].shopID,
-				['data'] = json.encode(order),
-				['cost'] = (results[1].cost + orderCost),
-			})
-		else
-			table.insert(order, data)
-			MySQL.Async.execute('INSERT INTO t1ger_orders (shopID, data, taken, cost, pos) VALUES (@shopID, @data, @taken, @cost, @pos)', {
-				['shopID'] = id,
-				['data'] = json.encode(order),
-				['taken'] = false,
-				['cost'] = tonumber(orderCost),
-				['pos'] = json.encode(Config.Shops[id].delivery)
-			})
-		end
-		return TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['stock_order_placed']:format(data.qty, data.label, orderCost))
-	end)
-end)
-
-RegisterServerEvent('t1ger_shops:deliverOrder')
-AddEventHandler('t1ger_shops:deliverOrder', function(data)
-	for k,v in pairs(data.order) do
-		local itemAdded, itemMatch = false, false
-		if next(shops[data.shopID].stock) then
-			for i = 1, #shops[data.shopID].stock do
-				if v.item == shops[data.shopID].stock[i].item and v.type == shops[data.shopID].stock[i].type then
-					shops[data.shopID].stock[i].qty = (shops[data.shopID].stock[i].qty + v.qty)
-					itemAdded = true
-					itemMatch = true
-					break
-				else
-					if i == #shops[data.shopID].stock then 
-						itemAdded = true
-						break
-					end
-				end
-			end
-		else
-			itemAdded = true
-		end
-
-		while not itemAdded do
-			Citizen.Wait(10)
-		end
-
-		if not itemMatch then
-			if v.str_match ~= nil then 
-				table.insert(shops[data.shopID].stock, {item = v.item , qty = v.qty, label = v.label, price = v.price, str_match = v.str_match, type = v.type})
-			else
-				table.insert(shops[data.shopID].stock, {item = v.item , qty = v.qty, label = v.label, price = v.price, type = v.type})
-			end
-		end
-
-		MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[data.shopID].stock), ['@id'] = data.shopID })
-		Config.Shops[data.shopID].data = shops[data.shopID]
-		TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, data.shopID, Config.Shops[data.shopID].data, shops)
-	end
-end)
-
-function GetShopOrders()
-	local done, orders = false, {}
-	MySQL.Async.fetchAll('SELECT * FROM t1ger_orders WHERE taken = @taken', {['@taken'] = false}, function(results)
-		if next(results) then 
-			for i = 1, #results do
-				local t = {id = results[i].id, shopID = results[i].shopID, taken = results[i].taken, cost = results[i].cost, pos = json.decode(results[i].pos), order = json.decode(results[i].data)}
-				table.insert(orders, t)
-				Citizen.Wait(5)
-				if i == #results then 
-					done = true
-				end
-			end
-		else
-			done = true
-		end
-	end)
-
-	while not done do 
-		Citizen.Wait(10)
-	end
-
-	return orders
+        TriggerClientEvent('t1ger_shops:loadShops', src, shops, Config.Shops, ownedId, jobId)
 end
 
-function UpdateOrderTakenStatus(id, shopID, state)
-	MySQL.Async.execute('UPDATE t1ger_orders SET taken = @taken WHERE id = @id and shopID = @shopID', {
-		['@taken'] = state,
-		['@shopID'] = shopID,
-		['@id'] = id
-	})
+local function getSociety(jobName)
+        for key, data in pairs(Config.Society) do
+                if data.job == jobName or key == jobName then
+                        return data
+                end
+        end
 end
 
-function AddShopOrder(data)
-	MySQL.Async.fetchAll("SELECT * FROM t1ger_orders WHERE shopID = @shopID AND id = @id", {['@shopID'] = data.shopID, ['@id'] = data.id}, function(results)
-		if results[1] then
-			local data = json.decode(results[1].data)
-			local t = {id = results[1].id, shopID = results[1].shopID, taken = results[1].taken, cost = results[1].cost, pos = results[1].pos, order = data}
-			TriggerEvent('t1ger_shops:deliverOrder', t)
-			MySQL.Sync.execute('DELETE FROM t1ger_orders WHERE id = @id and shopID = @shopID', {
-				['@id'] = results[1].id,
-				['@shopID'] = results[1].shopID
-			})
-		end
-	end)
+local function addSocietyMoney(jobName, amount)
+        if amount <= 0 then return end
+        if GetResourceState('qb-management') == 'started' then
+                TriggerEvent('qb-management:server:addAccountMoney', jobName, amount)
+        end
 end
 
--- Get player loadout:
-ESX.RegisterServerCallback('t1ger_shops:getLoadout',function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    cb(xPlayer.getLoadout())
-end)
-
--- function to purchase selected ammo:
-RegisterServerEvent('t1ger_shops:purchaseAmmo')
-AddEventHandler('t1ger_shops:purchaseAmmo', function(item, price, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if type == 'button_cash' then xPlayer.removeMoney(price) elseif type == 'button_card' then xPlayer.removeAccountMoney('bank', price) end
-    TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_purchased']:format(item.value,item.name,price))
-end)
-
--- function to purchase weapon:
-RegisterServerEvent('t1ger_shops:purchaseWeapon')
-AddEventHandler('t1ger_shops:purchaseWeapon', function(item, price, type)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if type == 'button_cash' then xPlayer.removeMoney(price) elseif type == 'button_card' then xPlayer.removeAccountMoney('bank', price) end
-    xPlayer.addWeapon(item.item, 0)
-    TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['item_purchased']:format(item.value,item.name,price))
-end)
-
--- Add Loadout Stock in shelf:
-RegisterServerEvent('t1ger_shops:loadoutDeposit')
-AddEventHandler('t1ger_shops:loadoutDeposit', function(item, amount, price, id, shelf)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local add_item, updated, itemMatch, itemName = item.value, false, false, item.name
-	if next(shops[id].stock) then
-		for i = 1, #shops[id].stock do
-			if add_item == shops[id].stock[i].item and shelf.type == shops[id].stock[i].type then
-				shops[id].stock[i].qty = (shops[id].stock[i].qty + amount)
-				updated = true
-				itemMatch = true
-				break
-			else
-				if i == #shops[id].stock then
-					updated = true
-					break
-				end
-			end
-		end
-	else
-		updated = true
-	end
-	while not updated do
-		Citizen.Wait(10)
-	end
-	if not itemMatch then
-		table.insert(shops[id].stock, {item = add_item, qty = amount, label = itemName, price = price, type = shelf.type, str_match = item.type})
-	end
-	-- Update Database:
-	MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-	-- Sync:
-	Config.Shops[id].data = shops[id]
-	TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-	-- Remove Inv Item:
-    if item.type == "weapon" then
-        xPlayer.removeWeapon(add_item, 0)
-    end
-	TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['shelf_item_deposit']:format(amount, itemName))
-end)
-
--- Remove items from shelf:
-RegisterServerEvent('t1ger_shops:loadoutWithdraw')
-AddEventHandler('t1ger_shops:loadoutWithdraw', function(item, label, amount, id, type, str_match)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	if next(shops[id].stock) then
-		for k,v in pairs(shops[id].stock) do
-			if item == v.item and type == v.type then
-				if tonumber(v.qty) == tonumber(amount) then
-					table.remove(shops[id].stock, k)
-				else
-					v.qty = (v.qty - amount)
-				end
-				-- Update Database:
-				MySQL.Async.execute('UPDATE t1ger_shops SET stock = @stock WHERE id = @id', { ['@stock'] = json.encode(shops[id].stock), ['@id'] = id })
-				-- Sync:
-				Config.Shops[id].data = shops[id]
-				TriggerClientEvent('t1ger_shops:updateShopsDataCL', -1, id, Config.Shops[id].data, shops)
-				-- Add Weapon:
-				if str_match == "weapon" then xPlayer.addWeapon(item, 1) end
-				TriggerClientEvent('t1ger_shops:notify', xPlayer.source, Lang['shelf_item_withdraw']:format(amount, label))
-				break
-			end
-		end
-	end
-end)
-
--- Function to get online players:
-function GetOnlinePlayers()
-    local xPlayers = ESX.GetExtendedPlayers()
-    local players  = {}
-	for i=1, #(xPlayers) do
-		local xPlayer = xPlayers[i]
-		table.insert(players, {
-			source     = xPlayer.source,
-			identifier = xPlayer.identifier,
-			name       = xPlayer.name
-		})
-	end
-    return players
+local function removeSocietyMoney(jobName, amount)
+        if amount <= 0 then return end
+        if GetResourceState('qb-management') == 'started' then
+                TriggerEvent('qb-management:server:removeAccountMoney', jobName, amount)
+        end
 end
+
+local function getSocietyBalance(jobName, cb)
+        if GetResourceState('qb-management') ~= 'started' then
+                cb(0)
+                return
+        end
+        TriggerEvent('qb-management:server:getAccountBalance', jobName, function(balance)
+                cb(balance or 0)
+        end)
+end
+
+local function getItemDefinition(itemName)
+        for _, def in ipairs(Config.Items) do
+                if def.item == itemName then
+                        return def
+                end
+        end
+end
+
+local function isItemAllowed(shopId, itemName)
+        if not Config.ItemCompatibility then return true end
+        local cfg = Config.Shops[shopId]
+        if not cfg then return false end
+        local item = getItemDefinition(itemName)
+        if not item or not item.type then return true end
+        for _, shopType in ipairs(item.type) do
+                if shopType == cfg.type then
+                        return true
+                end
+        end
+        return false
+end
+
+local function ensureShopData(id)
+        shops[id] = shops[id] or { id = id, citizenid = nil, stock = {}, shelves = {} }
+        Config.Shops[id].data = shops[id]
+        return shops[id]
+end
+
+AddEventHandler('onResourceStart', function(resource)
+        if resource ~= GetCurrentResourceName() then return end
+        loadShops()
+end)
+
+AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
+        if not Player then return end
+        sendShopsToPlayer(Player.PlayerData.source)
+end)
+
+RegisterNetEvent('t1ger_shops:debugSV', function()
+        sendShopsToPlayer(source)
+end)
+
+QBCore.Functions.CreateCallback('t1ger_shops:purchaseShop', function(source, cb, shopId)
+        local Player = QBCore.Functions.GetPlayer(source)
+        local cfg = Config.Shops[shopId]
+        if not Player or not cfg then
+                cb(false, Lang['invalid_amount'])
+                return
+        end
+        if cfg.owned then
+                lib.logger(source, 'warn', ('Attempted to buy already owned shop %s'):format(shopId))
+                cb(false, Lang['boss_menu_no_access'])
+                return
+        end
+        if not cfg.buyable then
+                lib.logger(source, 'warn', ('Attempted to buy non-buyable shop %s'):format(shopId))
+                cb(false, Lang['boss_menu_no_access'])
+                return
+        end
+        local price = math.floor(cfg.price)
+        if price <= 0 then
+                cb(false, Lang['invalid_amount'])
+                return
+        end
+        local accountType = Config.BuyShopWithBank and 'bank' or 'cash'
+        if Player.Functions.GetMoney(accountType) < price then
+                cb(false, Lang['not_enough_money'])
+                return
+        end
+        Player.Functions.RemoveMoney(accountType, price, 't1ger-shop-purchase')
+        local data = ensureShopData(shopId)
+        data.citizenid = Player.PlayerData.citizenid
+        data.stock = {}
+        data.shelves = {}
+        cfg.owned = true
+        dbExecute('INSERT INTO t1ger_shops (id, citizenid, stock, shelves) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE citizenid = VALUES(citizenid), stock = VALUES(stock), shelves = VALUES(shelves)', {
+                shopId,
+                data.citizenid,
+                json.encode(data.stock),
+                json.encode(data.shelves)
+        })
+        local society = Config.Society[cfg.society]
+        if society and society.job then
+                Player.Functions.SetJob(society.job, society.boss_grade or 0)
+        end
+        TriggerClientEvent('t1ger_shops:syncShops', -1, shops, Config.Shops)
+        cb(true)
+        lib.logger(source, 'info', ('Purchased shop %s for %s'):format(shopId, price))
+end)
+
+RegisterNetEvent('t1ger_shops:sellShop', function(shopId, sellPrice)
+        local src = source
+        local Player = QBCore.Functions.GetPlayer(src)
+        local cfg = Config.Shops[shopId]
+        local data = shops[shopId]
+        if not Player or not cfg or not data then return end
+        if data.citizenid ~= Player.PlayerData.citizenid then
+                lib.logger(src, 'warn', ('Attempted to sell shop %s without ownership'):format(shopId))
+                return
+        end
+        local amount = math.floor(sellPrice or 0)
+        if amount < 0 then
+                lib.logger(src, 'warn', ('Invalid sell amount for shop %s: %s'):format(shopId, amount))
+                return
+        end
+        local accountType = Config.BuyShopWithBank and 'bank' or 'cash'
+        Player.Functions.AddMoney(accountType, amount, 't1ger-shop-sell')
+        shops[shopId] = nil
+        cfg.owned = false
+        cfg.data = { id = shopId, stock = {}, shelves = {} }
+        dbExecute('DELETE FROM t1ger_shops WHERE id = ?', { shopId })
+        Player.Functions.SetJob('unemployed', 0)
+        TriggerClientEvent('t1ger_shops:syncShops', -1, shops, Config.Shops)
+        TriggerClientEvent('t1ger_shops:notify', src, Lang['shop_sold']:format(comma_value(amount)))
+        lib.logger(src, 'info', ('Sold shop %s for %s'):format(shopId, amount))
+end)
+
+QBCore.Functions.CreateCallback('t1ger_shops:getAccountBalance', function(source, cb, shopId)
+        local cfg = Config.Shops[shopId]
+        if not cfg then
+                cb(0)
+                return
+        end
+        local society = Config.Society[cfg.society]
+        if not society then
+                cb(0)
+                return
+        end
+        getSocietyBalance(society.job, cb)
+end)
+
+QBCore.Functions.CreateCallback('t1ger_shops:getUserInventory', function(source, cb)
+        local Player = QBCore.Functions.GetPlayer(source)
+        if not Player then
+                cb({})
+                return
+        end
+        local items = {}
+        for _, item in pairs(Player.PlayerData.items or {}) do
+                if item and item.name then
+                        items[#items + 1] = {
+                                name = item.name,
+                                label = item.label or (QBCore.Shared.Items[item.name] and QBCore.Shared.Items[item.name].label) or item.name,
+                                count = item.amount or item.count or 0
+                        }
+                end
+        end
+        cb(items)
+end)
+
+local function updateShopStock(shopId, itemName, amount, price)
+        local data = ensureShopData(shopId)
+        data.stock = data.stock or {}
+        local definition = getItemDefinition(itemName)
+        for _, entry in ipairs(data.stock) do
+                if entry.item == itemName then
+                        entry.qty = (entry.qty or 0) + amount
+                        if price and price >= 0 then
+                                entry.price = price
+                        end
+                        if definition and definition.str_match then
+                                entry.str_match = definition.str_match
+                        end
+                        return entry
+                end
+        end
+        local label = (definition and definition.label) or (QBCore.Shared.Items[itemName] and QBCore.Shared.Items[itemName].label) or itemName
+        local newEntry = { item = itemName, label = label, qty = amount, price = price or (definition and definition.price) or 0, str_match = definition and definition.str_match }
+        table.insert(data.stock, newEntry)
+        return newEntry
+end
+
+RegisterNetEvent('t1ger_shops:itemDeposit', function(shopId, itemName, label, amount, price)
+        local src = source
+        local Player = QBCore.Functions.GetPlayer(src)
+        local cfg = Config.Shops[shopId]
+        local data = shops[shopId]
+        if not Player or not cfg or not data then return end
+        if data.citizenid ~= Player.PlayerData.citizenid then
+                lib.logger(src, 'warn', ('Player tried to deposit item without ownership in shop %s'):format(shopId))
+                return
+        end
+        amount = math.floor(amount or 0)
+        price = math.floor(price or 0)
+        if amount < 1 or price < 0 then
+                lib.logger(src, 'warn', ('Invalid deposit data for shop %s: %s %s'):format(shopId, amount, price))
+                return
+        end
+        if not isItemAllowed(shopId, itemName) then
+                TriggerClientEvent('t1ger_shops:notify', src, Lang['item_not_available'], { type = 'error' })
+                return
+        end
+        local invItem = Player.Functions.GetItemByName(itemName)
+        if not invItem or (invItem.amount or invItem.count or 0) < amount then
+                TriggerClientEvent('t1ger_shops:notify', src, Lang['not_enough_items'], { type = 'error' })
+                return
+        end
+        Player.Functions.RemoveItem(itemName, amount)
+        local entry = updateShopStock(shopId, itemName, amount, price)
+        entry.label = label or entry.label
+        saveShop(shopId)
+        broadcastShop(shopId)
+        TriggerClientEvent('t1ger_shops:notify', src, Lang['shelf_item_deposit']:format(amount, entry.label))
+        lib.logger(src, 'info', ('Deposited %s x%s into shop %s'):format(itemName, amount, shopId))
+end)
+
+RegisterNetEvent('t1ger_shops:itemWithdraw', function(shopId, itemName, amount)
+        local src = source
+        local Player = QBCore.Functions.GetPlayer(src)
+        local cfg = Config.Shops[shopId]
+        local data = shops[shopId]
+        if not Player or not cfg or not data then return end
+        if data.citizenid ~= Player.PlayerData.citizenid then
+                lib.logger(src, 'warn', ('Player tried to withdraw item without ownership in shop %s'):format(shopId))
+                return
+        end
+        amount = math.floor(amount or 0)
+        if amount < 1 then
+                lib.logger(src, 'warn', ('Invalid withdraw amount for shop %s'):format(shopId))
+                return
+        end
+        local entryIndex
+        local entry
+        for i, stock in ipairs(data.stock or {}) do
+                if stock.item == itemName then
+                        entryIndex = i
+                        entry = stock
+                        break
+                end
+        end
+        if not entry or (entry.qty or 0) < amount then
+                TriggerClientEvent('t1ger_shops:notify', src, Lang['no_stock_in_shelf'], { type = 'error' })
+                return
+        end
+        entry.qty = (entry.qty or 0) - amount
+        if entry.qty <= 0 then
+                table.remove(data.stock, entryIndex)
+        end
+        Player.Functions.AddItem(itemName, amount)
+        saveShop(shopId)
+        broadcastShop(shopId)
+        TriggerClientEvent('t1ger_shops:notify', src, Lang['shelf_item_withdraw']:format(amount, entry.label))
+        lib.logger(src, 'info', ('Withdrew %s x%s from shop %s'):format(itemName, amount, shopId))
+end)
+
+RegisterNetEvent('t1ger_shops:updateItemPrice', function(shopId, itemName, price)
+        local src = source
+        local Player = QBCore.Functions.GetPlayer(src)
+        local cfg = Config.Shops[shopId]
+        local data = shops[shopId]
+        if not Player or not cfg or not data then return end
+        if data.citizenid ~= Player.PlayerData.citizenid then
+                        lib.logger(src, 'warn', ('Player tried to update price without ownership in shop %s'):format(shopId))
+                        return
+        end
+        price = math.floor(price or 0)
+        if price < 0 then
+                lib.logger(src, 'warn', ('Invalid price update for shop %s: %s'):format(shopId, price))
+                return
+        end
+        for _, entry in ipairs(data.stock or {}) do
+                if entry.item == itemName then
+                        local oldPrice = entry.price or 0
+                        entry.price = price
+                        saveShop(shopId)
+                        broadcastShop(shopId)
+                        TriggerClientEvent('t1ger_shops:notify', src, Lang['shelf_item_price_change']:format(entry.label, comma_value(oldPrice), comma_value(price)))
+                        lib.logger(src, 'info', ('Updated price for %s in shop %s to %s'):format(itemName, shopId, price))
+                        return
+                end
+        end
+end)
+
+QBCore.Functions.CreateCallback('t1ger_shops:checkoutBasket', function(source, cb, basket, paymentType)
+        local Player = QBCore.Functions.GetPlayer(source)
+        if not Player or type(basket) ~= 'table' then
+                cb(false, Lang['invalid_amount'])
+                return
+        end
+        local shopId = basket.shopID or basket.shopId
+        local cfg = Config.Shops[shopId]
+        local data = shops[shopId]
+        if not cfg or not cfg.owned or not data then
+                cb(false, Lang['item_not_available'])
+                return
+        end
+        if not basket.items or #basket.items == 0 then
+                cb(false, Lang['basket_is_empty'])
+                return
+        end
+        local total = 0
+        local stockSnapshot = {}
+        for _, entry in ipairs(data.stock or {}) do
+                stockSnapshot[entry.item] = entry
+        end
+        for _, item in ipairs(basket.items) do
+                local count = math.floor(item.count or 0)
+                if count < 1 then
+                        lib.logger(source, 'warn', ('Invalid basket entry for shop %s: %s'):format(shopId, item.item))
+                        cb(false, Lang['invalid_amount'], data.stock)
+                        return
+                end
+                local stockEntry = stockSnapshot[item.item]
+                if not stockEntry or (stockEntry.qty or 0) < count then
+                        cb(false, Lang['item_not_available'], data.stock)
+                        return
+                end
+                total = total + (stockEntry.price or 0) * count
+        end
+        local accountType = paymentType == 'bank' and 'bank' or 'cash'
+        if Player.Functions.GetMoney(accountType) < total then
+                cb(false, Lang['not_enough_money'], data.stock)
+                return
+        end
+        local addedItems = {}
+        for _, item in ipairs(basket.items) do
+                local count = math.floor(item.count or 0)
+                if not Player.Functions.AddItem(item.item, count) then
+                        for _, added in ipairs(addedItems) do
+                                Player.Functions.RemoveItem(added.item, added.count)
+                        end
+                        cb(false, Lang['inventory_full'], data.stock)
+                        return
+                end
+                addedItems[#addedItems + 1] = { item = item.item, count = count }
+        end
+        Player.Functions.RemoveMoney(accountType, total, 't1ger-shop-purchase-items')
+        local updatedStock = {}
+        for _, entry in ipairs(data.stock or {}) do
+                updatedStock[#updatedStock + 1] = entry
+        end
+        for _, item in ipairs(basket.items) do
+                local count = math.floor(item.count or 0)
+                for idx, entry in ipairs(updatedStock) do
+                        if entry.item == item.item then
+                                entry.qty = (entry.qty or 0) - count
+                                if entry.qty <= 0 then
+                                        table.remove(updatedStock, idx)
+                                end
+                                break
+                        end
+                end
+        end
+        data.stock = updatedStock
+        cfg.data = data
+        saveShop(shopId)
+        broadcastShop(shopId)
+        local society = Config.Society[cfg.society]
+        if society and society.job then
+                addSocietyMoney(society.job, total)
+        end
+        cb(true, nil, updatedStock)
+        lib.logger(source, 'info', ('Processed basket worth %s for shop %s'):format(total, shopId))
+end)

@@ -64,47 +64,47 @@ end)
 -- Commands:
 Citizen.CreateThread(function()
 	-- lock/unlock:
-	if Config.Lock.Command ~= '' or Config.Lock.Command ~= nil then
-		RegisterCommand(Config.Lock.Command, function()
-			ToggleVehicleLock()
-		end, false)
-	end
-	-- car menu:
-	if Config.CarMenu.Command ~= '' or Config.CarMenu.Command ~= nil then
-		RegisterCommand(Config.CarMenu.Command, function()
-			CarInteractionMenu()
-		end, false)
-	end
-	-- open keys menu:
-	if Config.Keys.Command ~= '' or Config.Keys.Command ~= nil then
-		RegisterCommand(Config.Keys.Command, function()
-			KeysManagement()
-		end, false)
-	end
-	-- engine toggle:
-	if Config.Engine.Command ~= '' or Config.Engine.Command ~= nil then
-		RegisterCommand(Config.Engine.Command, function()
-			ToggleVehicleEngine()
-		end, false)
-	end
-	-- lockpick command:
-	if Config.Lockpick.Command  ~= '' or Config.Lockpick.Command  ~= nil then
-		RegisterCommand(Config.Lockpick.Command , function()
-			LockpickVehicle()
-		end, false)
-	end
-	-- search command:
-	if Config.Search.Command  ~= '' or Config.Search.Command  ~= nil then
-		RegisterCommand(Config.Search.Command , function()
-			SearchVehicle()
-		end, false)
-	end
-	-- hotwire command:
-	if Config.Hotwire.Command  ~= '' or Config.Hotwire.Command  ~= nil then
-		RegisterCommand(Config.Hotwire.Command , function()
-			HotwireVehicle()
-		end, false)
-	end
+        if Config.Lock.Command ~= nil and Config.Lock.Command ~= '' then
+                RegisterCommand(Config.Lock.Command, function()
+                        ToggleVehicleLock()
+                end, false)
+        end
+        -- car menu:
+        if Config.CarMenu.Command ~= nil and Config.CarMenu.Command ~= '' then
+                RegisterCommand(Config.CarMenu.Command, function()
+                        CarInteractionMenu()
+                end, false)
+        end
+        -- open keys menu:
+        if Config.Keys.Command ~= nil and Config.Keys.Command ~= '' then
+                RegisterCommand(Config.Keys.Command, function()
+                        KeysManagement()
+                end, false)
+        end
+        -- engine toggle:
+        if Config.Engine.Command ~= nil and Config.Engine.Command ~= '' then
+                RegisterCommand(Config.Engine.Command, function()
+                        ToggleVehicleEngine()
+                end, false)
+        end
+        -- lockpick command:
+        if Config.Lockpick.Command  ~= nil and Config.Lockpick.Command  ~= '' then
+                RegisterCommand(Config.Lockpick.Command , function()
+                        LockpickVehicle()
+                end, false)
+        end
+        -- search command:
+        if Config.Search.Command  ~= nil and Config.Search.Command  ~= '' then
+                RegisterCommand(Config.Search.Command , function()
+                        SearchVehicle()
+                end, false)
+        end
+        -- hotwire command:
+        if Config.Hotwire.Command  ~= nil and Config.Hotwire.Command  ~= '' then
+                RegisterCommand(Config.Hotwire.Command , function()
+                        HotwireVehicle()
+                end, false)
+        end
 end)
 
 local window_rolled = false

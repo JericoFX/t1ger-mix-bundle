@@ -1,177 +1,221 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
-player = nil
-coords = {}
+-------------------------------------
 
-Citizen.CreateThread(function()
-    while true do
-		player = PlayerPedId()
-		coords = GetEntityCoords(player)
-        Citizen.Wait(500)
+local pawnshopPoints = {}
+
+local function showPrompt(point, shop)
+    if point.promptVisible then return end
+    local keyLabel = KeyString(shop.keyBind)
+    local prompt = Lang[shop.prompt] or shop.prompt
+    lib.showTextUI(prompt:format(keyLabel))
+    point.promptVisible = true
+end
+
+local function hidePrompt(point)
+    if not point.promptVisible then return end
+    lib.hideTextUI()
+    point.promptVisible = false
+end
+
+local function transactionDialog(action, itemName)
+    local descriptions = {
+        buy = Lang['input_amount_desc_buy'],
+        sell = Lang['input_amount_desc_sell']
+    }
+
+    local response = lib.inputDialog(Lang['input_amount_title'], {
+        {
+            type = 'number',
+            label = Lang['input_amount_label'],
+            description = descriptions[action] or '',
+            required = true,
+            min = 1,
+            default = 1
+        }
+    })
+
+    if not response then return end
+
+    local amount = tonumber(response[1])
+    if not amount then
+        TriggerEvent('t1ger_pawnshop:notify', Lang['invalid_amount'], 'error')
+        return
+    end
+
+    amount = math.floor(amount)
+    if amount <= 0 then
+        TriggerEvent('t1ger_pawnshop:notify', Lang['quantity_limit'], 'error')
+        return
+    end
+
+    TriggerServerEvent(('t1ger_pawnshop:%sItem'):format(action), itemName, amount)
+end
+
+local function openBuyMenu(shopId)
+    local menuId = ('t1ger_pawnshop_%s_buy'):format(shopId)
+    local mainMenu = ('t1ger_pawnshop_%s_main'):format(shopId)
+    local options = {}
+
+    for itemName, itemData in pairs(Config.Items) do
+        if itemData.buy and itemData.buy.enabled then
+            options[#options + 1] = {
+                title = itemData.label,
+                description = (Lang['buy_price']):format(itemData.buy.price),
+                icon = 'fas fa-cart-shopping',
+                onSelect = function()
+                    transactionDialog('buy', itemName)
+                end
+            }
+        end
+    end
+
+    if #options == 0 then
+        options[#options + 1] = {
+            title = Lang['item_disabled'],
+            disabled = true
+        }
+    end
+
+    options[#options + 1] = {
+        title = Lang['return'],
+        menu = mainMenu
+    }
+
+    lib.registerContext({
+        id = menuId,
+        title = Lang['buy_menu_title'],
+        menu = mainMenu,
+        options = options
+    })
+
+    lib.showContext(menuId)
+end
+
+local function openSellMenu(shopId)
+    local menuId = ('t1ger_pawnshop_%s_sell'):format(shopId)
+    local mainMenu = ('t1ger_pawnshop_%s_main'):format(shopId)
+    local options = {}
+
+    for itemName, itemData in pairs(Config.Items) do
+        if itemData.sell and itemData.sell.enabled then
+            options[#options + 1] = {
+                title = itemData.label,
+                description = (Lang['sell_price']):format(itemData.sell.price),
+                icon = 'fas fa-dollar-sign',
+                onSelect = function()
+                    transactionDialog('sell', itemName)
+                end
+            }
+        end
+    end
+
+    if #options == 0 then
+        options[#options + 1] = {
+            title = Lang['item_disabled'],
+            disabled = true
+        }
+    end
+
+    options[#options + 1] = {
+        title = Lang['return'],
+        menu = mainMenu
+    }
+
+    lib.registerContext({
+        id = menuId,
+        title = Lang['sell_menu_title'],
+        menu = mainMenu,
+        options = options
+    })
+
+    lib.showContext(menuId)
+end
+
+local function openPawnshopMenu(shopId)
+    local menuId = ('t1ger_pawnshop_%s_main'):format(shopId)
+
+    lib.registerContext({
+        id = menuId,
+        title = Lang['pawnshop_title'],
+        options = {
+            {
+                title = Lang['buy'],
+                icon = 'fas fa-cart-shopping',
+                onSelect = function()
+                    openBuyMenu(shopId)
+                end
+            },
+            {
+                title = Lang['sell'],
+                icon = 'fas fa-hand-holding-dollar',
+                onSelect = function()
+                    openSellMenu(shopId)
+                end
+            }
+        }
+    })
+
+    lib.showContext(menuId)
+end
+
+CreateThread(function()
+    for id, shop in ipairs(Config.Pawnshops) do
+        local point = lib.points.new({
+            coords = shop.coords,
+            distance = Config.MarkerDrawDistance
+        })
+
+        function point:onEnter()
+            self.promptVisible = false
+        end
+
+        function point:onExit()
+            hidePrompt(self)
+        end
+
+        function point:nearby()
+            if shop.marker.enable and self.currentDistance <= Config.MarkerDrawDistance then
+                DrawMarker(
+                    shop.marker.type,
+                    shop.coords.x, shop.coords.y, shop.coords.z - 0.975,
+                    0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    shop.marker.scale.x, shop.marker.scale.y, shop.marker.scale.z,
+                    shop.marker.color.r, shop.marker.color.g, shop.marker.color.b, shop.marker.color.a,
+                    false, true, 2, false, false, false, false
+                )
+            end
+
+            if self.currentDistance <= Config.InteractDistance then
+                showPrompt(self, shop)
+
+                if IsControlJustReleased(0, shop.keyBind) then
+                    hidePrompt(self)
+                    openPawnshopMenu(id)
+                end
+            else
+                hidePrompt(self)
+            end
+        end
+
+        pawnshopPoints[#pawnshopPoints + 1] = point
     end
 end)
 
-local curShop = nil
-Citizen.CreateThread(function()
-    while true do
-		Citizen.Wait(1)
-		local sleep = true
-		for k,v in pairs(Config.Pawnshops) do
-			local distance = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, v.pos[1], v.pos[2], v.pos[3], false)
-			if curShop ~= nil then
-				distance = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, curShop.pos[1], curShop.pos[2], curShop.pos[3], false)
-				while curShop ~= nil and distance > 1.0 do curShop = nil; Citizen.Wait(1) end
-				if curShop == nil then ESX.UI.Menu.CloseAll() end
-			else
-				local mk = v.marker
-				if distance <= mk.drawDist then
-					sleep = false
-					if distance >= 1.0 and mk.enable then 
-						DrawMarker(mk.type, v.pos[1], v.pos[2], v.pos[3] - 0.975, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2, false, false, false, false)
-					elseif distance < 1.0 then
-						DrawText3Ds(v.pos[1], v.pos[2], v.pos[3], v.drawText)
-						if IsControlJustPressed(0, v.keyBind) then
-							curShop = v
-							OpenPawnshopMenu(k,v)
-						end
-					end
-				end
-			end
-		end
-		if sleep then Citizen.Wait(1000) end
+CreateThread(function()
+    for _, shop in ipairs(Config.Pawnshops) do
+        local blipConfig = shop.blip
+        if blipConfig and blipConfig.enable then
+            local blip = AddBlipForCoord(shop.coords.x, shop.coords.y, shop.coords.z)
+            SetBlipSprite(blip, blipConfig.sprite)
+            SetBlipDisplay(blip, blipConfig.display)
+            SetBlipScale(blip, blipConfig.scale)
+            SetBlipColour(blip, blipConfig.color)
+            SetBlipAsShortRange(blip, true)
+            BeginTextCommandSetBlipName('STRING')
+            AddTextComponentString(blipConfig.name)
+            EndTextCommandSetBlipName(blip)
+        end
     end
-end)
-
--- Pawnshop Menu:
-function OpenPawnshopMenu(id,val)
-	local elements = {
-		{ label = Lang['buy'], value = 'buy' },
-		{ label = Lang['sell'], value = 'sell' },
-	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'pawnshop_main_menu',
-		{
-			title    = 'Pawnshop',
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		if data.current.value == 'buy' then
-			OpenBuyMenu(id,val)
-		end
-		if data.current.value == 'sell' then
-			OpenSellMenu(id,val)
-		end
-	end, function(data, menu)
-		menu.close()
-		curShop = nil
-	end)
-end
-
--- Pawnshop Buy Menu:
-function OpenBuyMenu(id,val)
-	local elements = {}
-
-	for k,v in ipairs(Config.Items) do
-		if v.buy.enable then
-			table.insert(elements, {label = v.label .. " | "..('<span style="color:green;">%s</span>'):format("$"..v.buy.price..""), item = v.name, name = v.label, price = v.buy.price})
-		end
-	end
-	table.insert(elements, {label = Lang['button_return'], value = 'return'})
-
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'pawnshop_buy_menu',
-		{
-			title    = Lang['buy_menu_title'],
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		if data.current.value == 'return' then 
-			menu.close()
-		else
-			ESX.UI.Menu.CloseAll()
-			ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'pawnshop_buy_dialog', {
-				title = 'Amount to Buy?'
-			}, function(data2, menu2)
-				local amount = tonumber(data2.value)
-				if amount == nil or amount == '' then
-					ShowNotifyESX(Lang['invalid_amount'])
-				else
-					menu2.close()
-					local amount = tonumber(data2.value)
-					local total_price = tonumber(data.current.price * amount)
-					TriggerServerEvent('t1ger_pawnshop:buyItem', amount, total_price, data.current.item, data.current.name)
-					OpenPawnshopMenu(id,val)
-				end
-			end,
-			function(data2, menu2)
-				menu2.close()	
-			end)
-		end
-	end, function(data, menu)
-		menu.close()
-	end)
-end
-
--- Pawnshop Sell Menu:
-function OpenSellMenu(id,val)
-	local elements = {}
-
-	for k,v in ipairs(Config.Items) do
-		if v.sell.enable then
-			table.insert(elements, {label = v.label .. " | "..('<span style="color:green;">%s</span>'):format("$"..v.sell.price..""), item = v.name, name = v.label, price = v.sell.price})
-		end
-	end
-	table.insert(elements, {label = Lang['button_return'], value = 'return'})
-
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'pawnshop_sell_menu',
-		{
-			title    = Lang['sell_menu_title'],
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		if data.current.value == 'return' then 
-			menu.close()
-		else
-			ESX.UI.Menu.CloseAll()
-			ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'pawnshop_sell_dialog', {
-				title = 'Amount to Sell?'
-			}, function(data2, menu2)
-				local amount = tonumber(data2.value)
-				if amount == nil or amount == '' then
-					ShowNotifyESX(Lang['invalid_amount'])
-				else
-					menu2.close()
-					local amount = tonumber(data2.value)
-					local total_price = tonumber(data.current.price * amount)
-					TriggerServerEvent('t1ger_pawnshop:sellItem', amount, total_price, data.current.item, data.current.name)
-					OpenPawnshopMenu(id,val)
-				end
-			end,
-			function(data2, menu2)
-				menu2.close()	
-			end)
-		end
-	end, function(data, menu)
-		menu.close()
-	end)
-end
-
--- Create Pawnshop Blips:
-Citizen.CreateThread(function()
-	for k,v in pairs(Config.Pawnshops) do
-		local bp = v.blip
-		if bp.enable then
-			local blip = AddBlipForCoord(v.pos[1], v.pos[2], v.pos[3])
-			SetBlipSprite(blip, bp.sprite)
-			SetBlipDisplay(blip, bp.display)
-			SetBlipScale  (blip, bp.scale)
-			SetBlipColour (blip, bp.color)
-			SetBlipAsShortRange(blip, true)
-			BeginTextCommandSetBlipName("STRING")
-			AddTextComponentString(bp.name)
-			EndTextCommandSetBlipName(blip)
-		end
-	end
 end)

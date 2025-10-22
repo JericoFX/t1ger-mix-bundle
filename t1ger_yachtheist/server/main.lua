@@ -122,8 +122,10 @@ lib.callback.register('t1ger_yachtheist:startHeist', function(source)
         end
         local cops = 0
         for _, job in ipairs(Config.PoliceSettings.jobs) do
-                local _, count = QBCore.Functions.GetPlayersOnDuty(job)
-                cops = cops + (count or 0)
+                local playersOnDuty = QBCore.Functions.GetPlayersOnDuty(job)
+                if type(playersOnDuty) == 'table' then
+                        cops = cops + #playersOnDuty
+                end
         end
         if cops < Config.PoliceSettings.requiredCops then
                 return { success = false, reason = Lang['not_enough_cops'] }

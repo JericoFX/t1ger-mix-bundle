@@ -133,133 +133,49 @@ Config.Society = { -- configure qb-management access for each delivery company
 }
 
 Config.JobValues = {
-	[1] = {
-		label = "Low", level = 0, certificate = false,
-		vehicles = {
-			[1] = {name = "Surfer 2", model = "surfer2", deposit = 500},
-			[2] = {name = "Speedo", model = "speedo", deposit = 1000},
-			[3] = {name = "Burrito 3", model = "burrito3", deposit = 1500},
-			[4] = {name = "Rumpo", model = "rumpo", deposit = 2000}
-		}
-	},
-	[2] = {
-		label = "Medium", level = 20, certificate = false,
-		vehicles = {
-			[1] = {name = "Boxville 2", model = "boxville2", deposit = 1500},
-			[2] = {name = "Boxville 4", model = "boxville4", deposit = 3000}
-		}
-	},
-	[3] = {
-		label = "High", level = 50, certificate = true,
-		vehicles = { 
-			[1] = {name = "Hauler", model = "hauler", deposit = 1500},
-			[2] = {name = "Packer", model = "packer", deposit = 3000},
-			[3] = {name = "Phantom", model = "phantom", deposit = 4500},
-		}
-	},
-	[4] = { -- DO NOT TOUCH ID NUMBER OF THIS!!!!
-		label = "Shops", level = 0, certificate = false,
-		vehicles = { 
-			[1] = {name = "Speedo", model = "speedo", deposit = 1000},
-			[2] = {name = "Burrito 3", model = "burrito3", deposit = 1500},
-			[3] = {name = "Boxville 2", model = "boxville2", deposit = 2500},
-			[4] = {name = "Boxville 4", model = "boxville4", deposit = 3000},
-		}
-	},
+    low = {
+        label = 'Local',
+        level = 0,
+        certificate = false,
+        payout = { base = 550, perStop = 175 },
+        vehicles = {
+            { name = 'Surfer 2', model = 'surfer2', deposit = 500 },
+            { name = 'Speedo', model = 'speedo', deposit = 1000 },
+            { name = 'Burrito 3', model = 'burrito3', deposit = 1500 },
+            { name = 'Rumpo', model = 'rumpo', deposit = 2000 }
+        }
+    },
+    medium = {
+        label = 'Regional',
+        level = 20,
+        certificate = false,
+        payout = { base = 950, perStop = 250 },
+        vehicles = {
+            { name = 'Boxville 2', model = 'boxville2', deposit = 1500 },
+            { name = 'Boxville 4', model = 'boxville4', deposit = 3000 }
+        }
+    },
+    high = {
+        label = 'Long Haul',
+        level = 50,
+        certificate = true,
+        payout = { base = 1350, perStop = 375 },
+        vehicles = {
+            { name = 'Hauler', model = 'hauler', deposit = 1500 },
+            { name = 'Packer', model = 'packer', deposit = 3000 },
+            { name = 'Phantom', model = 'phantom', deposit = 4500 }
+        }
+    }
 }
 
-Config.KeyControls = {
-	['company_menu'] = 38,
-	['buy_company'] = 38,
-	['fill_up_trailer'] = 38,
-	['park_forklift'] = 47,
-	['take_forklift'] = 47,
-	['deliver_pallet'] = 38,
-	['return_vehicle'] = 38,
-	['put_pallet_in_trailer'] = 38,
-	['fill_up_vehicle'] = 38,
-	['take_parcel'] = 38,
-	['deliver_parcel'] = 47,
-	['pick_up_parcel'] = 38,
-	['parcel_in_veh'] = 38,
+Config.BlipSettings = {
+    company = { enable = true, sprite = 477, display = 4, scale = 0.60, color = 0, name = 'Delivery Company' }
 }
 
--- Reward Settings:
-Config.Reward = { 
-	min = 250,
-	max = 500, 
-	valueAddition = { [1] = 5, [2] = 15, [3] = 50, [4] = 50 }	-- adds x% to the math.random(min,max), where 1, 2, 3 are levels
+Config.MarkerSettings = {
+    menu = { enable = true, type = 20, scale = { x = 0.7, y = 0.7, z = 0.7 }, color = { r = 240, g = 52, b = 52, a = 100 } }
 }
 
-Config.ParcelProp = "prop_cs_cardbox_01"		-- set prop type for low value jobs
-Config.LowValueJobs = {
-	[1] = {pos = vector3(85.63,-1959.32,21.12), done = false},
-	[2] = {pos = vector3(-14.09,-1442.06,31.1), done = false},
-	[3] = {pos = vector3(334.67,-2057.93,20.94), done = false},
-	[4] = {pos = vector3(479.67,-1736.01,29.15), done = false},
-	[5] = {pos = vector3(-1075.48,-1645.37,4.5), done = false},
-	[6] = {pos = vector3(-1132.46,-1455.88,4.87), done = false},
-	[7] = {pos = vector3(-951.8,-1078.59,2.15), done = false},
-	[8] = {pos = vector3(-911.93,-1511.76,5.02), done = false},
-	[9] = {pos = vector3(-1112.03,-902.51,3.6), done = false},
-	[10] = {pos = vector3(976.25,-580.07,59.64), done = false},
-	[11] = {pos = vector3(1303.06,-527.99,71.46), done = false}
-}
-
-Config.MedValueJobs = {
-	[1] = {
-		name = "Clothing",
-		prop = "prop_tshirt_box_01",
-		deliveries = {
-			[1] = {pos = vector3(79.34,-1389.52,29.38), done = false},
-			[2] = {pos = vector3(-1198.24,-774.43,17.32), done = false},
-			[3] = {pos = vector3(421.83,-809.75,29.49), done = false},
-			[4] = {pos = vector3(-1456.23,-234.61,49.8), done = false},
-			[5] = {pos = vector3(-3169.31,1052.05,20.86), done = false},
-			[6] = {pos = vector3(-1096.36,2710.0,19.11), done = false},
-			[7] = {pos = vector3(616.91,2754.84,42.09), done = false},
-			[8] = {pos = vector3(126.58,-215.31,54.56), done = false},
-		},
-	},
-	[2] = {
-		name = "Liquor",
-		prop = "prop_crate_11e",
-		deliveries = {
-			[1] = {pos = vector3(-56.64,-1750.96,29.42), done = false},
-			[2] = {pos = vector3(33.64,-1346.68,29.5), done = false},
-			[3] = {pos = vector3(-1487.03,-383.3,40.16), done = false},
-			[4] = {pos = vector3(1137.89,-978.62,46.42), done = false},
-			[5] = {pos = vector3(-1227.16,-906.51,12.33), done = false},
-			[6] = {pos = vector3(381.54,324.29,103.57), done = false},
-			[7] = {pos = vector3(1169.23,2706.28,38.16), done = false},
-			[8] = {pos = vector3(539.92,2670.01,42.16), done = false},
-		},
-	},
-}
-
-Config.HighValueJobs = {
-	[1] = {
-		name = "Liquor",
-		trailer = "Trailers2",
-		prop = "prop_boxpile_06a",
-		route = {
-			[1] = {pos = vector4(-306.35,-2714.35,6.0,314.45), pallet = {pickup = vector4(-313.6,-2717.76,6.0,226.09), drop_off = vector3(-306.9,-2728.23,6.0)}, done = false},
-			[2] = {pos = vector4(-201.63,-2390.17,6.0,269.95), pallet = {pickup = vector4(-203.16,-2394.94,6.0,89.49), drop_off = vector3(-211.23,-2385.75,6.0)}, done = false},
-			[3] = {pos = vector4(-536.15,-2841.45,6.0,19.78), pallet = {pickup = vector4(-527.42,-2840.9,6.0,119.35), drop_off = vector3(-536.44,-2849.78,6.01)}, done = false},
-			[4] = {pos = vector4(58.26,-2529.96,6.01,328.5), pallet = {pickup = vector4(60.87,-2534.63,6.0,61.36), drop_off = vector3(49.01,-2531.46,6.01)}, done = false},
-			[5] = {pos = vector4(-161.28,-2659.04,6.0,271.15), pallet = {pickup = vector4(-164.27,-2664.0,6.0,359.45), drop_off = vector3(-168.86,-2654.88,6.0)}, done = false},
-		},
-	},
-	[2] = {
-		name = "Groceries",
-		trailer = "Trailers2",
-		prop = "prop_boxpile_06a",
-		route = {
-			[1] = {pos = vector4(-306.35,-2714.35,6.0,314.45), pallet = {pickup = vector4(-313.6,-2717.76,6.0,226.09), drop_off = vector3(-306.9,-2728.23,6.0)}, done = false},
-			[2] = {pos = vector4(-201.63,-2390.17,6.0,269.95), pallet = {pickup = vector4(-203.16,-2394.94,6.0,89.49), drop_off = vector3(-211.23,-2385.75,6.0)}, done = false},
-			[3] = {pos = vector4(-536.15,-2841.45,6.0,19.78), pallet = {pickup = vector4(-527.42,-2840.9,6.0,119.35), drop_off = vector3(-536.44,-2849.78,6.01)}, done = false},
-			[4] = {pos = vector4(58.26,-2529.96,6.01,328.5), pallet = {pickup = vector4(60.87,-2534.63,6.0,61.36), drop_off = vector3(49.01,-2531.46,6.01)}, done = false},
-			[5] = {pos = vector4(-161.28,-2659.04,6.0,271.15), pallet = {pickup = vector4(-164.27,-2664.0,6.0,359.45), drop_off = vector3(-168.86,-2654.88,6.0)}, done = false},
-		},
-	},
+Config.Keybinds = {
+    interact = 38 -- E
 }

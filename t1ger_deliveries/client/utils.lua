@@ -1,3 +1,18 @@
+local ClientUtils = {}
+local QBCore = exports['qb-core']:GetCoreObject()
+local SharedUtils = SharedUtils
+
+local playerData = QBCore.Functions.GetPlayerData() or {}
+local jobListeners = {}
+
+local function broadcastJob(job)
+    for _, handler in ipairs(jobListeners) do
+        handler(job)
+    end
+end
+
+function ClientUtils.RegisterJobListener(listener)
+    table.insert(jobListeners, listener)
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
@@ -70,27 +85,33 @@ type = getNotifyType(msg)
 })
 end)
 
--- Draw 3D Text:
-function T1GER_DrawTxt(x, y, z, text)
-	local boolean, _x, _y = GetScreenCoordFromWorldCoord(x, y, z)
-    SetTextScale(0.32, 0.32); SetTextFont(4); SetTextProportional(1)
-    SetTextColour(255, 255, 255, 255)
-    SetTextEntry("STRING"); SetTextCentre(1); AddTextComponentString(text)
-    DrawText(_x, _y)
-    local factor = (string.len(text) / 500)
-    DrawRect(_x, (_y + 0.0125), (0.015 + factor), 0.03, 0, 0, 0, 80)
+    if playerData and playerData.job then
+        listener(playerData.job)
+    end
 end
 
-function T1GER_GetControlOfEntity(entity)
-	local netTime = 15
-	NetworkRequestControlOfEntity(entity)
-	while not NetworkHasControlOfEntity(entity) and netTime > 0 do 
-		NetworkRequestControlOfEntity(entity)
-		Citizen.Wait(100)
-		netTime = netTime -1
-	end
+function ClientUtils.GetPlayerData()
+    return playerData
 end
 
+function ClientUtils.HasJob(jobName)
+    if not playerData or not playerData.job then
+        return false
+    end
+
+    return playerData.job.name == jobName
+end
+
+function ClientUtils.IsPlayerBoss(jobName)
+    if not playerData or not playerData.job then
+        return false
+    end
+
+    if playerData.job.name ~= jobName then
+        return false
+    end
+
+    return playerData.job.isboss == true or (playerData.job.grade and playerData.job.grade.level and playerData.job.grade.level >= (Config.JobBossGrade or 4))
 -- Load Anim
 function T1GER_LoadAnim(animDict)
         if lib and lib.requestAnimDict then
@@ -118,52 +139,62 @@ function T1GER_LoadPtfxAsset(dict)
         RequestNamedPtfxAsset(dict); while not HasNamedPtfxAssetLoaded(dict) do Citizen.Wait(1) end
 end
 
-function T1GER_isJob(name)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	if PlayerData.job.name == name then
-		return true
-	end
-	return false
+function ClientUtils.Notify(description, type)
+    lib.notify({
+        description = description,
+        type = type or 'inform',
+        position = 'top'
+    })
 end
 
-function T1GER_GetJob(table)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	for k,v in pairs(table) do
-		if PlayerData.job.name == v then
-			return true
-		end
-	end
-	return false
+function ClientUtils.OpenContext(id, title, options)
+    lib.registerContext({
+        id = id,
+        title = title,
+        options = options,
+        position = 'top-right'
+    })
+
+    lib.showContext(id)
 end
 
--- Function for Mission text:
-function DrawMissionText(text)
-    SetTextScale(0.5, 0.5)
-    SetTextFont(4)
-    SetTextProportional(1)
-    SetTextEdge(2, 0, 0, 0, 150)
-    SetTextEntry("STRING")
-    SetTextCentre(1)
-    SetTextOutline()
-    AddTextComponentString(text)
-    DrawText(0.5,0.955)
+function ClientUtils.OpenInput(options)
+    return lib.inputDialog(options.title, options.fields)
 end
 
--- Round function
-function round(num, numDecimalPlaces)
-    local mult = 10^(numDecimalPlaces or 0)
-    return math.floor(num * mult + 0.5) / mult
+function ClientUtils.ShowText(message)
+    lib.showTextUI(message)
 end
 
--- Comma function
-function comma_value(n)
-	local left,num,right = string.match(n,'^([^%d]*%d)(%d*)(.-)$')
-	return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
+function ClientUtils.HideText()
+    if lib.isTextUIOpen() then
+        lib.hideTextUI()
+    end
 end
 
--- Draw Rect:
-function drawRct(x, y, width, height, r, g, b, a)
-	DrawRect(x + width/2, y + height/2, width, height, r, g, b, a)
+function ClientUtils.CreateTimer(duration, onEnd)
+    return lib.timer(duration, onEnd, true)
 end
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    playerData = QBCore.Functions.GetPlayerData()
+    broadcastJob(playerData and playerData.job or nil)
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    playerData = {}
+    broadcastJob(nil)
+end)
+
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+    if not playerData then
+        playerData = {}
+    end
+
+    playerData.job = job
+    broadcastJob(job)
+end)
+
+_G.ClientUtils = ClientUtils
+
+return ClientUtils

@@ -1,35 +1,36 @@
--------------------------------------
-------- Created by T1GER#9080 -------
-------------------------------------- 
-
 fx_version 'cerulean'
-games {'gta5'}
-lua54 "yes"
+games { 'gta5' }
+lua54 'yes'
 
 author 'T1GER#9080'
-discord 'https://discord.gg/FdHkq5q'
-description 'T1GER Deliveries'
-version '1.0.3'
+description 'T1GER Deliveries - QBCore/ox_lib migration'
+version '2.0.0'
+
+shared_scripts {
+    '@ox_lib/init.lua',
+    'language.lua',
+    'config.lua',
+    'shared/utils.lua'
+}
 
 shared_script '@ox_lib/init.lua'
 
 client_scripts {
-	'language.lua',
-	'config.lua',
-	'client/main.lua',
-	'client/utils.lua'
+    'client/utils.lua',
+    'client/main.lua'
 }
 
 server_scripts {
-	'@mysql-async/lib/MySQL.lua',
-	'language.lua',
-	'config.lua',
-	'server/main.lua'
+    '@oxmysql/lib/MySQL.lua',
+    'server/main.lua'
 }
 
 escrow_ignore {
-    "config.lua",
-    "language.lua",
-    "client/*.lua",
-    "server/*.lua",
+    'config.lua',
+    'language.lua',
+    'shared/*.lua',
+    'client/*.lua',
+    'server/*.lua'
 }
+
+dependency 'ox_lib'

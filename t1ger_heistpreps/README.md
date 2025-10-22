@@ -7,11 +7,18 @@ https://youtu.be/sA5seUh5pcg
 https://forum.cfx.re/t/esx-t1ger-heist-preps-immersive-interactive-heist-setup-jobs/
 
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore](https://docs.qbcore.org/)
 
 ## DEPENDENCIES:
+- [qb-core](https://github.com/qbcore-framework/qb-core)
+- [ox_lib](https://overextended.dev/ox_lib)
+- [oxmysql](https://github.com/overextended/oxmysql)
 - [Lockpick (Optional)](https://github.com/quasar-scripts/lockpick)
 - [Data Cracking (Optional)](https://github.com/utkuali/datacrack)
+
+## NOTAS RÁPIDAS
+- Configura `Config.JobTimeout` (minutos) para que las preparaciones se reinicien automáticamente cuando se atasquen.
+- Las barras de progreso y notificaciones se sirven ahora desde **ox_lib**.
 
 ## INSTALLATION:
 1. Drag & drop the folder into your `resources` server folder.

@@ -11,20 +11,22 @@ discord 'https://discord.gg/FdHkq5q'
 description 'T1GER Heist Preps'
 version '1.0.1'
 
+shared_scripts {
+    '@ox_lib/init.lua',
+    'language.lua',
+    'config.lua'
+}
+
 client_scripts {
-	'language.lua',
-	'config.lua',
-	'client/utils.lua',
-	'client/main.lua',
-	'escrow/cl.lua'
+    'client/utils.lua',
+    'client/main.lua',
+    'escrow/cl.lua'
 }
 
 server_scripts {
-	'@mysql-async/lib/MySQL.lua',
-	'language.lua',
-	'config.lua',
-	'server/main.lua',
-	'escrow/sv.lua'
+    '@oxmysql/lib/MySQL.lua',
+    'server/main.lua',
+    'escrow/sv.lua'
 }
 
 exports {}

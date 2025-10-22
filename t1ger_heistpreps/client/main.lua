@@ -1,17 +1,45 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
+ 
+local QBCore = exports['qb-core']:GetCoreObject()
 
-local player, coords = nil, {}
-Citizen.CreateThread(function()
-    while true do
-        player = PlayerPedId()
-        coords = GetEntityCoords(player)
-        Citizen.Wait(500)
-    end
+local cache = {
+    ped = PlayerPedId(),
+    coords = GetEntityCoords(PlayerPedId())
+}
+
+local player, coords = cache.ped, cache.coords
+
+lib.onCache('ped', function(value)
+    cache.ped = value or PlayerPedId()
+    player = cache.ped
+end)
+
+lib.onCache('coords', function(value)
+    cache.coords = value or GetEntityCoords(cache.ped)
+    coords = cache.coords
 end)
 
 local usingPhoneBox, hasJob = false, false
+
+local function useProgress(duration, label)
+        if not Config.ProgressBars then
+                Wait(duration)
+                return true
+        end
+        return lib.progressBar({
+                duration = duration,
+                label = label,
+                useWhileDead = false,
+                canCancel = true,
+                disable = {
+                        move = true,
+                        car = true,
+                        combat = true
+                }
+        })
+end
 
 RegisterCommand(Config.RequestJobCommand, function(source, args)
 	if usingPhoneBox == true then 
@@ -29,21 +57,24 @@ RegisterCommand(Config.RequestJobCommand, function(source, args)
 end, false)
 
 function GetRandomPreparation(obj)
-	usingPhoneBox = true
-	hasJob = true
-	local anim = {dict = 'anim@heists@keypad@', lib = 'idle_a'}
-	SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
-	TaskTurnPedToFaceEntity(player, obj, 1.0)
-	Citizen.Wait(1000)
-	T1GER_LoadAnim(anim.dict)
-	FreezeEntityPosition(player, true)
-	if Config.ProgressBars then
-		exports['progressBars']:startUI(2000, Lang['pb_request_job'])
-	end
-	TaskPlayAnim(player, anim.dict, anim.lib, 2.0, -2.0, -1, 1, 0, 0, 0, 0 )
-	Citizen.Wait(2000)
-	ClearPedTasks(player)
-	FreezeEntityPosition(player, false)
+        usingPhoneBox = true
+        hasJob = true
+        local anim = {dict = 'anim@heists@keypad@', lib = 'idle_a'}
+        SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
+        TaskTurnPedToFaceEntity(player, obj, 1.0)
+        Wait(1000)
+        T1GER_LoadAnim(anim.dict)
+        FreezeEntityPosition(player, true)
+        TaskPlayAnim(player, anim.dict, anim.lib, 2.0, -2.0, -1, 1, 0, 0, 0, 0 )
+        local progressed = useProgress(2000, Lang['pb_request_job'])
+        ClearPedTasks(player)
+        FreezeEntityPosition(player, false)
+
+        if not progressed then
+                usingPhoneBox = false
+                hasJob = false
+                return
+        end
 
 	local type = GetRandomJobType()
 	--- debug -----
@@ -89,9 +120,9 @@ function HackingPrep(type, num)
 	TriggerEvent('t1ger_heistpreps:notifyAdvanced', sender, subject, msg, textureDict, iconType)
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		for k,v in pairs(Config.Jobs['hacking']) do
 			if v.inUse == true and next(v.cache) then
@@ -103,12 +134,9 @@ Citizen.CreateThread(function()
 					end
 
 					if v.cache.pickedUp == nil then
-						if hack_data[k].prop == nil then 
-							while not NetworkDoesNetworkIdExist(v.cache.netId) do
-								Wait(1000)
-							end
-							hack_data[k].prop = NetworkGetEntityFromNetworkId(v.cache.netId)
-						end
+                                                if hack_data[k].prop == nil then
+                                                        hack_data[k].prop = EnsureNetEntity(v.cache.netId, 30, 500)
+                                                end
 					end
 
 					if hack_data[k].prop ~= nil and DoesEntityExist(hack_data[k].prop) then
@@ -140,7 +168,7 @@ Citizen.CreateThread(function()
 							sleep = false
 							T1GER_DrawTxt(decryptCoords.x, decryptCoords.y, decryptCoords.z, Lang['draw_decrypt_device'])
 							if IsControlJustPressed(0, Config.KeyControls['decrypt_device']) and distance < 2.0 then
-								local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+                                                                local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 								if closestPlayer ~= -1 and dist <= 1.0 then
 									return TriggerEvent('t1ger_heistpreps:notify', Lang['someone_is_too_close'])
 								else
@@ -157,7 +185,7 @@ Citizen.CreateThread(function()
 							sleep = false
 							T1GER_DrawTxt(decryptCoords.x, decryptCoords.y, decryptCoords.z, Lang['draw_collect_device'])
 							if IsControlJustPressed(0, Config.KeyControls['collect_device']) and distance < 1.5 then
-								local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+                                                                local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 								if closestPlayer ~= -1 and dist <= 1.0 then
 									return TriggerEvent('t1ger_heistpreps:notify', Lang['someone_is_too_close'])
 								else
@@ -171,33 +199,38 @@ Citizen.CreateThread(function()
 			end
 		end
 		if sleep then 
-			Citizen.Wait(2000)
+			Wait(2000)
 		end
 	end
 end)
 
 function DecryptHackingDevice(id, val)
-	Citizen.Wait(200)
+        Wait(200)
 
-	if val.cache.decrypting ~= nil or val.cache.decrypting == true then
-		return TriggerEvent('t1ger_heistpreps:notify', Lang['device_being_decrypted'])
-	else
-		TriggerServerEvent('t1ger_heistpreps:hacking:decrypting', 'hacking', id)
-	end
+        if val.cache.decrypting ~= nil or val.cache.decrypting == true then
+                return TriggerEvent('t1ger_heistpreps:notify', Lang['device_being_decrypted'])
+        else
+                TriggerServerEvent('t1ger_heistpreps:hacking:decrypting', 'hacking', id)
+        end
 
-	SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
-	FreezeEntityPosition(player, true)
-	TaskStartScenarioInPlace(player, 'WORLD_HUMAN_STAND_MOBILE', -1, true)
-	if Config.ProgressBars then exports['progressBars']:startUI(3000, Lang['pb_decrypting']) end
-	Citizen.Wait(3000)
+        SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
+        FreezeEntityPosition(player, true)
+        TaskStartScenarioInPlace(player, 'WORLD_HUMAN_STAND_MOBILE', -1, true)
+        local progressed = useProgress(3000, Lang['pb_decrypting'])
+        if not progressed then
+                ClearPedTasks(player)
+                FreezeEntityPosition(player, false)
+                TriggerServerEvent('t1ger_heistpreps:hacking:cancelDecrypting', 'hacking', id)
+                return
+        end
 
-	while Config.Jobs['hacking'][id].cache.decrypting == nil do 
-		Citizen.Wait(500)
-	end
+        while Config.Jobs['hacking'][id].cache.decrypting == nil do
+                Wait(500)
+        end
 
-	TriggerServerEvent('t1ger_heistpreps:removeItem', val.item[1].name, val.item[1].amount)
+        TriggerServerEvent('t1ger_heistpreps:removeItem', val.item[1].name, val.item[1].amount)
 
-	if Config.DataCrackMinigame == true then 
+        if Config.DataCrackMinigame == true then
 		TriggerEvent("datacrack:start", val.decrypt.difficulty, function(output)
 			if output == true then
 				TriggerEvent('t1ger_heistpreps:notify', Lang['decryption_started'])
@@ -207,26 +240,30 @@ function DecryptHackingDevice(id, val)
 			end
 			ClearPedTasks(player)
 			FreezeEntityPosition(player, false)
-		end)
-	else
-		if Config.ProgressBars then exports['progressBars']:startUI(3000, 'STARTING DECRYPTION SOFTWARE') end
-		Citizen.Wait(3000)
-		TriggerEvent('t1ger_heistpreps:notify', Lang['decryption_started'])
-		TriggerServerEvent('t1ger_heistpreps:hacking:startDecryption', 'hacking', id, coords)
-		ClearPedTasks(player)
-		FreezeEntityPosition(player, false)
-	end
+                end)
+        else
+                if not useProgress(3000, 'STARTING DECRYPTION SOFTWARE') then
+                        ClearPedTasks(player)
+                        FreezeEntityPosition(player, false)
+                        TriggerServerEvent('t1ger_heistpreps:hacking:cancelDecrypting', 'hacking', id)
+                        return
+                end
+                TriggerEvent('t1ger_heistpreps:notify', Lang['decryption_started'])
+                TriggerServerEvent('t1ger_heistpreps:hacking:startDecryption', 'hacking', id, coords)
+                ClearPedTasks(player)
+                FreezeEntityPosition(player, false)
+        end
 end
 
 function PickUpObject(id, val)
 	local anim = {dict = 'mp_common', name = 'givetake2_a'}
 	T1GER_LoadAnim(anim.dict)
 	TaskTurnPedToFaceEntity(player, hack_data[id].prop, 1.0)
-	Citizen.Wait(1000)
+	Wait(1000)
 	TaskPlayAnim(player, anim.dict, anim.name, 4.0, 4.0, -1, 0, 1, 0,0,0)
-	Citizen.Wait(1500)
+	Wait(1500)
 	NetworkFadeOutEntity(hack_data[id].prop, false, false)
-	Citizen.Wait(500)
+	Wait(500)
 	TriggerServerEvent('t1ger_heistpreps:giveItem', val.item[1].name, val.item[1].amount)
 	ClearPedTasks(player)
 	DeleteEntity(hack_data[id].prop)
@@ -238,7 +275,7 @@ end
 
 function CollectDevice(id, val)
 	TriggerServerEvent('t1ger_heistpreps:hacking:collected', 'hacking', id)
-	Citizen.Wait(3000)
+	Wait(3000)
 	hack_data[id] = nil
 	hasJob = false
 end
@@ -263,9 +300,9 @@ function DrillsPrep(type, num)
 	TriggerEvent('t1ger_heistpreps:notifyAdvanced', sender, subject, msg, textureDict, iconType)
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		for k,v in pairs(Config.Jobs['drills']) do
 			if v.inUse == true then
@@ -285,28 +322,24 @@ Citizen.CreateThread(function()
 						drills_data[k].npc[num] = {peds = {}} 
 					end
 
-					if distance <= 200.0 then
-						if drills_data[k].props[num] == nil then
-							while not NetworkDoesNetworkIdExist(crate.netId) do
-								Wait(500)
-							end
-							drills_data[k].props[num] = NetworkGetEntityFromNetworkId(crate.netId)
-							if DoesEntityExist(drills_data[k].props[num]) then
-								SetEntityVisible(drills_data[k].props[num], true) 
-							end
-						end
-					end
+                                        if distance <= 200.0 then
+                                                if drills_data[k].props[num] == nil then
+                                                        drills_data[k].props[num] = EnsureNetEntity(crate.netId, 40, 250)
+                                                        if drills_data[k].props[num] and DoesEntityExist(drills_data[k].props[num]) then
+                                                                SetEntityVisible(drills_data[k].props[num], true)
+                                                        end
+                                                end
+                                        end
 
-					for i = 1, #crate.npc do
-						if drills_data[k].npc[num].peds[i] == nil then 
-							while not NetworkDoesNetworkIdExist(crate.npc[i].netId) do
-								Wait(500)
-							end
-							drills_data[k].npc[num].peds[i] = NetworkGetEntityFromNetworkId(crate.npc[i].netId)
-								SetContrustionWorkerSettings(drills_data[k].npc[num].peds[i], crate.npc[i])
-							Citizen.Wait(10)
-						end
-					end
+                                        for i = 1, #crate.npc do
+                                                if drills_data[k].npc[num].peds[i] == nil then
+                                                        drills_data[k].npc[num].peds[i] = EnsureNetEntity(crate.npc[i].netId, 40, 250)
+                                                        if drills_data[k].npc[num].peds[i] then
+                                                                SetContrustionWorkerSettings(drills_data[k].npc[num].peds[i], crate.npc[i])
+                                                        end
+                                                        Wait(10)
+                                                end
+                                        end
 
 					if drills_data[k].props[num] ~= nil and DoesEntityExist(drills_data[k].props[num]) then
 						if distance < 5.0 and drills_data[k].props[num] ~= nil and crate.searched == false then
@@ -321,7 +354,7 @@ Citizen.CreateThread(function()
 			end
 		end
 		if sleep then 
-			Citizen.Wait(2000)
+			Wait(2000)
 		end
 	end
 end)
@@ -331,18 +364,20 @@ function SearchCrate(id, val, num, crate)
 	local anim2 = {dict = 'amb@medic@standing@kneel@base', name = 'base'}
 	T1GER_LoadAnim(anim.dict)
 	T1GER_LoadAnim(anim2.dict)
-	local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+    local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 	if closestPlayer ~= -1 and dist <= 1.0 then
 		if IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim.dict, anim.lib, 3) or IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim2.dict, anim2.lib, 3) then
 			return TriggerEvent('t1ger_heistpreps:notify', Lang['drills_being_searched'])
 		end
 	end
-	TaskTurnPedToFaceEntity(player, drills_data[id].props[num], 1.0)
-	Citizen.Wait(1000)
-	TaskPlayAnim(player, anim2.dict, anim2.name, 2.0, -2.0, -1, 1, 0, false, false, false)
-	TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
-	if Config.ProgressBars then exports['progressBars']:startUI(5000, Lang['pb_searching_crate']) end
-	Citizen.Wait(5000)
+        TaskTurnPedToFaceEntity(player, drills_data[id].props[num], 1.0)
+        Wait(1000)
+        TaskPlayAnim(player, anim2.dict, anim2.name, 2.0, -2.0, -1, 1, 0, false, false, false)
+        TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
+        if not useProgress(5000, Lang['pb_searching_crate']) then
+                ClearPedTasks(player)
+                return
+        end
 	math.randomseed(GetGameTimer())
 	local chance = math.random(0,100)
 	for i = 1, #crate.npc do
@@ -359,12 +394,12 @@ function SearchCrate(id, val, num, crate)
 	SetRelationshipBetweenGroups(5, GetHashKey("NPC"), GetHashKey("PLAYER"))
 	SetRelationshipBetweenGroups(5, GetHashKey("PLAYER"), GetHashKey("JobNPCs"))
 	ClearPedTasks(player)
-	Citizen.Wait(200)
+	Wait(200)
 	NetworkFadeOutEntity(drills_data[id].props[num], false, false)
-	Citizen.Wait(500)
+	Wait(500)
 	DeleteEntity(drills_data[id].props[num])
 	DeleteObject(drills_data[id].props[num])
-	Citizen.Wait(200)
+	Wait(200)
 	drills_data[id].props[num] = false
 	TriggerServerEvent('t1ger_heistpreps:drills:searched', 'drills', id, num)
 end
@@ -395,13 +430,13 @@ AddEventHandler('t1ger_heistpreps:drills:resetCurJob', function(type, num)
 	end
 	drill_blips = {}
 	TriggerEvent('t1ger_heistpreps:notify', Lang['got_necessary_drills'])
-	Citizen.Wait(3000)
+	Wait(3000)
 	hasJob = false
 end)
 
 RegisterNetEvent('t1ger_heistpreps:drills:resetCurJob2')
 AddEventHandler('t1ger_heistpreps:drills:resetCurJob2', function(num)
-	Citizen.Wait(3000)
+	Wait(3000)
 	drills_data[num] = nil
 end)
 
@@ -416,11 +451,11 @@ function ThermitePrep(type, num)
 	local location = Config.Jobs[type][num].location
 	
 	while thermite_data[num] == nil do
-		Citizen.Wait(500)
+		Wait(500)
 	end
 
 	while thermite_data[num].vehicle == nil do 
-		Citizen.Wait(500)
+		Wait(500)
 	end
 						
 	if thermite_blip == nil then
@@ -433,9 +468,9 @@ function ThermitePrep(type, num)
 	end
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		for k,v in pairs(Config.Jobs['thermite']) do
 			if v.inUse == true and next(v.cache) then
@@ -446,32 +481,32 @@ Citizen.CreateThread(function()
 						thermite_data[k] = {npc = {}, npcSettings = {}}
 					end
 
-					while not NetworkDoesNetworkIdExist(v.cache.netId) do
-						Wait(1000)
-					end
-
-					thermite_data[k].vehicle = NetworkGetEntityFromNetworkId(v.cache.netId)
+                                        thermite_data[k].vehicle = EnsureNetEntity(v.cache.netId, 40, 250)
+                                        if not thermite_data[k].vehicle then
+                                                goto continue
+                                        end
 					if thermite_data[k].vehSettings == nil then 
 						thermite_data[k].vehSettings = true
 						while not DoesEntityExist(thermite_data[k].vehicle) do
-							Citizen.Wait(100)
+							Wait(100)
 						end
 						SetVehicleSettings(thermite_data[k].vehicle, v.vehicle)
 					end
 
 					for num,agent in pairs(v.agents) do
-						while not NetworkDoesNetworkIdExist(v.cache.agents[num]) do
-							Wait(1000)
-						end
-						thermite_data[k].npc[num] = NetworkGetEntityFromNetworkId(v.cache.agents[num])
-						if thermite_data[k].npcSettings[num] == nil then
-							thermite_data[k].npcSettings[num] = true
-							SetConvoyPedSettings(thermite_data[k].npc[num], agent)
-							if num == 1 then
-								TaskVehicleDriveToCoordLongrange(thermite_data[k].npc[num], thermite_data[k].vehicle, v.stopLocation.x, v.stopLocation.y, v.stopLocation.z, 60.0, 787004, 2.0)
-							end
-						end
-					end
+                                                thermite_data[k].npc[num] = EnsureNetEntity(v.cache.agents[num], 40, 250)
+                                                if thermite_data[k].npcSettings[num] == nil then
+                                                        thermite_data[k].npcSettings[num] = true
+                                                        if thermite_data[k].npc[num] then
+                                                                SetConvoyPedSettings(thermite_data[k].npc[num], agent)
+                                                        end
+                                                        if num == 1 and thermite_data[k].npc[num] and thermite_data[k].vehicle then
+                                                                TaskVehicleDriveToCoordLongrange(thermite_data[k].npc[num], thermite_data[k].vehicle, v.stopLocation.x, v.stopLocation.y, v.stopLocation.z, 60.0, 787004, 2.0)
+                                                        end
+                                                end
+                                        end
+
+                                        ::continue::
 
 					if DoesEntityExist(thermite_data[k].vehicle) then
 
@@ -519,9 +554,9 @@ Citizen.CreateThread(function()
 							SetVehicleForwardSpeed(thermite_data[k].vehicle, 2.0)
 							if convoyDist <= 3.0 then
 								SetVehicleBrake(thermite_data[k].vehicle, true)
-								Citizen.Wait(2000)
+								Wait(2000)
 								FreezeEntityPosition(thermite_data[k].vehicle, true)
-								Citizen.Wait(1000)
+								Wait(1000)
 								ResetThermiteJob(k,v)
 								thermite_data[k].stopSettings = true
 							end
@@ -534,7 +569,7 @@ Citizen.CreateThread(function()
 		end
 
 		if sleep then 
-			Citizen.Wait(2000)
+			Wait(2000)
 		end
 	end
 end)
@@ -542,29 +577,33 @@ end)
 function SearchConvoyTrunk(id, val)
 	local anim = {dict = 'anim@gangops@facility@servers@bodysearch@', name = 'player_search'}
 	T1GER_LoadAnim(anim.dict)
-	local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+    local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 	if closestPlayer ~= -1 and dist <= 1.0 then
 		if IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim.dict, anim.name, 3) then
 			return TriggerEvent('t1ger_heistpreps:notify', Lang['convoy_being_searched'])
 		end
 	end
-	if val.cache.searching == false then
-		return TriggerEvent('t1ger_heistpreps:notify', Lang['convoy_being_searched'])
-	end
-	TriggerServerEvent('t1ger_heistpreps:thermite:searching', 'thermite', id)
-	SetVehicleDoorOpen(thermite_data[id].vehicle, 5, false, false)
-	Citizen.Wait(1000)
-	TaskTurnPedToFaceEntity(player, thermite_data[id].vehicle, 1.0)
-	Citizen.Wait(1000)
-	FreezeEntityPosition(player, true)
-	TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
-	if Config.ProgressBars then exports['progressBars']:startUI(5000, Lang['pb_searching_convoy']) end
-	Citizen.Wait(5000)
-	TriggerServerEvent('t1ger_heistpreps:giveItem', val.item.name, val.item.amount)
-	TriggerEvent('t1ger_heistpreps:notify', Lang['found_thermal_charges']:format(val.item.amount))
-	FreezeEntityPosition(player, false)
-	ClearPedTasks(player)
-	ResetThermiteJob(id, val)
+        if val.cache.searching == false then
+                return TriggerEvent('t1ger_heistpreps:notify', Lang['convoy_being_searched'])
+        end
+        TriggerServerEvent('t1ger_heistpreps:thermite:searching', 'thermite', id, true)
+        SetVehicleDoorOpen(thermite_data[id].vehicle, 5, false, false)
+        Wait(1000)
+        TaskTurnPedToFaceEntity(player, thermite_data[id].vehicle, 1.0)
+        Wait(1000)
+        FreezeEntityPosition(player, true)
+        TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
+        if not useProgress(5000, Lang['pb_searching_convoy']) then
+                FreezeEntityPosition(player, false)
+                ClearPedTasks(player)
+                TriggerServerEvent('t1ger_heistpreps:thermite:searching', 'thermite', id, false)
+                return
+        end
+        TriggerServerEvent('t1ger_heistpreps:giveItem', val.item.name, val.item.amount)
+        TriggerEvent('t1ger_heistpreps:notify', Lang['found_thermal_charges']:format(val.item.amount))
+        FreezeEntityPosition(player, false)
+        ClearPedTasks(player)
+        ResetThermiteJob(id, val)
 end
 
 function ResetThermiteJob(id, val)
@@ -572,13 +611,13 @@ function ResetThermiteJob(id, val)
 	for k,v in pairs(val.agents) do
 		if DoesEntityExist(thermite_data[id].npc[k]) then 
 			NetworkFadeOutEntity(thermite_data[id].npc[k], false, false)
-			Citizen.Wait(500)
+			Wait(500)
 			DeleteEntity(thermite_data[id].npc[k])
 		end
 	end
 	if DoesEntityExist(thermite_data[id].vehicle) then 
 		NetworkFadeOutEntity(thermite_data[id].vehicle, false, false)
-		Citizen.Wait(500)
+		Wait(500)
 		DeleteEntity(thermite_data[id].vehicle)
 	end
 	if thermite_blip ~= nil and DoesBlipExist(thermite_blip) then 
@@ -589,7 +628,7 @@ end
 
 RegisterNetEvent('t1ger_heistpreps:thermite:resetCL')
 AddEventHandler('t1ger_heistpreps:thermite:resetCL', function(type, num)
-	Citizen.Wait(3000)
+	Wait(3000)
 	thermite_data[num] = nil
 end)
 
@@ -636,9 +675,9 @@ function ExplosivesPrep(type, num)
 	TriggerEvent('t1ger_heistpreps:notifyAdvanced', sender, subject, msg, textureDict, iconType)
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		for k,v in pairs(Config.Jobs['explosives']) do
 			if v.inUse == true and next(v.cache) then
@@ -649,19 +688,16 @@ Citizen.CreateThread(function()
 						explosives_data[k] = {prop = nil, settings = false}
 					end
 
-					if v.cache.collected == nil then
-						if explosives_data[k].prop == nil then 
-							while not NetworkDoesNetworkIdExist(v.cache.netId) do
-								Wait(1000)
-							end
-							explosives_data[k].prop = NetworkGetEntityFromNetworkId(v.cache.netId)
-						end
-					end
+                                        if v.cache.collected == nil then
+                                                if explosives_data[k].prop == nil then
+                                                        explosives_data[k].prop = EnsureNetEntity(v.cache.netId, 40, 250)
+                                                end
+                                        end
 
 					if explosives_data[k].prop ~= nil and DoesEntityExist(explosives_data[k].prop) then
 						if explosives_data[k].settings == false then
 							PlaceObjectOnGroundProperly(explosives_data[k].prop)
-							Citizen.Wait(1000)
+							Wait(1000)
 							FreezeEntityPosition(explosives_data[k].prop, true)
 							SetEntityAsMissionEntity(explosives_data[k].prop, true, true)
 							explosives_data[k].settings = true 
@@ -704,7 +740,7 @@ Citizen.CreateThread(function()
 			end
 		end
 		if sleep then 
-			Citizen.Wait(2000)
+			Wait(2000)
 		end
 	end
 end)
@@ -723,7 +759,7 @@ function CollectExplosivesCase(id,val)
 			explosives_blip[i] = false
 		end
 	end
-	Citizen.Wait(2000)
+	Wait(2000)
 	FreezeEntityPosition(player, false)
 	FreezeEntityPosition(explosives_data[id].prop, false)
 	AttachEntityToEntity(explosives_data[id].prop, player, boneIndex, pX, pY, pZ, rX, rY, rZ, true, true, false, true, 2, 1)
@@ -733,7 +769,7 @@ function CollectExplosivesCase(id,val)
 	
 	if explosives_blip[1] ~= nil and explosives_blip[1] == false then 
 		explosives_blip[1] = CreateJobBlip(Config.Blips['explosives'], val.shore)
-		Citizen.Wait(200)
+		Wait(200)
 		SetBlipAsShortRange(explosives_blip[1], false)
 		SetBlipRoute(explosives_blip[1], false)
 	end
@@ -745,7 +781,7 @@ function PlaceExplosiveCase(id,val)
 	T1GER_LoadAnim(anim.dict)
 	TaskPlayAnim(player, anim.dict, anim.name, 5.0, 1.0, 1.0, 48, 0.0, 0, 0, 0)
 	TriggerServerEvent('t1ger_heistpreps:explosives:placed', 'explosives', id)
-	Citizen.Wait(1000)
+	Wait(1000)
 	DetachEntity(explosives_data[id].prop)
 	ClearPedTasks(player)
 	PlaceObjectOnGroundProperly(explosives_data[id].prop)
@@ -762,27 +798,29 @@ end
 function UnlockExplosiveCase(id,val)
 	TriggerServerEvent('t1ger_heistpreps:explosives:lockpicking', 'explosives', id, true)
 	local unlocked = nil
-	if Config.LockpickingMinigame then
-		TriggerEvent('lockpick:client:openLockpick', function(result)
-			unlocked = result
-		end)
-	else
-		if Config.ProgressBars then exports['progressBars']:startUI(2000, Lang['pb_unlocking']) end
-		Citizen.Wait(2000)
-		unlocked = true
-	end
+        if Config.LockpickingMinigame then
+                TriggerEvent('lockpick:client:openLockpick', function(result)
+                        unlocked = result
+                end)
+        else
+                if not useProgress(2000, Lang['pb_unlocking']) then
+                        TriggerServerEvent('t1ger_heistpreps:explosives:lockpicking', 'explosives', id, false)
+                        return
+                end
+                unlocked = true
+        end
 	while unlocked == nil do
-		Citizen.Wait(200)
+		Wait(200)
 	end
 	if unlocked == true then 
 		TriggerServerEvent('t1ger_heistpreps:explosives:unlocked', 'explosives', id)
 		TriggerEvent('t1ger_heistpreps:notify', Lang['found_explosive_charge'])
-		Citizen.Wait(500)
+		Wait(500)
 		NetworkFadeOutEntity(explosives_data[id].prop, false, false)
-		Citizen.Wait(1000)
+		Wait(1000)
 		DeleteEntity(explosives_data[id].prop)
 		-- reset job:
-		Citizen.Wait(3000)
+		Wait(3000)
 		explosives_blip = {}
 		hasJob = false
 	else
@@ -793,8 +831,8 @@ end
 
 RegisterNetEvent('t1ger_heistpreps:explosives:reset')
 AddEventHandler('t1ger_heistpreps:explosives:reset', function(type, num)
-	Citizen.Wait(3000)
-	explosives_data[id] = nil
+        Wait(3000)
+        explosives_data[num] = nil
 end)
 
 -- ## KEYCARD PREPARATION JOB ## --
@@ -817,9 +855,9 @@ function KeycardPrep(type, num)
 	TriggerEvent('t1ger_heistpreps:notifyAdvanced', sender, subject, msg, textureDict, iconType)
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		local sleep = true
 		for k,v in pairs(Config.Jobs['keycard']) do
 			if v.inUse == true and next(v.cache) then
@@ -831,16 +869,12 @@ Citizen.CreateThread(function()
 						keycard_data[k] = {settings = false, trucks = {}}
 					end
 
-					if keycard_data[k].npc == nil and v.cache.searchedKeys == false then
-						while not NetworkDoesNetworkIdExist(v.cache.netId) do
-							Wait(500)
-						end
-						keycard_data[k].npc = NetworkGetEntityFromNetworkId(v.cache.netId)
-						while not DoesEntityExist(keycard_data[k].npc) do
-							Citizen.Wait(250) 
-						end
-						SetBankManSettings(keycard_data[k].npc, v)
-					end
+                                        if keycard_data[k].npc == nil and v.cache.searchedKeys == false then
+                                                keycard_data[k].npc = EnsureNetEntity(v.cache.netId, 40, 250)
+                                                if keycard_data[k].npc then
+                                                        SetBankManSettings(keycard_data[k].npc, v)
+                                                end
+                                        end
 
 					if keycard_data[k].npc ~= nil and DoesEntityExist(keycard_data[k].npc) then
 
@@ -868,16 +902,12 @@ Citizen.CreateThread(function()
 						for num,data in pairs(v.spawns) do 
 							if data.searched ~= nil and data.searched == false then 
 
-								if keycard_data[k].trucks[num] == nil and data.netId ~= nil then
-									while not NetworkDoesNetworkIdExist(data.netId) do
-										Citizen.Wait(250)
-									end
-									keycard_data[k].trucks[num] = NetworkGetEntityFromNetworkId(data.netId)
-									while not DoesEntityExist(keycard_data[k].trucks[num]) do 
-										Citizen.Wait(200)
-									end
-									SetBankTrunkSettings(keycard_data[k].trucks[num])
-								end
+                                                                if keycard_data[k].trucks[num] == nil and data.netId ~= nil then
+                                                                        keycard_data[k].trucks[num] = EnsureNetEntity(data.netId, 40, 250)
+                                                                        if keycard_data[k].trucks[num] then
+                                                                                SetBankTrunkSettings(keycard_data[k].trucks[num])
+                                                                        end
+                                                                end
 							end
 						end
 
@@ -909,7 +939,7 @@ Citizen.CreateThread(function()
 			end
 		end
 		if sleep then 
-			Citizen.Wait(2000)
+			Wait(2000)
 		end
 	end
 end)
@@ -926,27 +956,29 @@ function SearchBankPed(id,val)
 	local anim2 = {dict = 'amb@medic@standing@kneel@base', name = 'base'}
 	T1GER_LoadAnim(anim.dict)
 	T1GER_LoadAnim(anim2.dict)
-	local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+    local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 	if closestPlayer ~= -1 and dist <= 1.0 then
 		if IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim.dict, anim.lib, 3) or IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim2.dict, anim2.lib, 3) then
 			return TriggerEvent('t1ger_heistpreps:notify', Lang['bankman_being_searched'])
 		end
 	end
-	TaskTurnPedToFaceEntity(player, keycard_data[id].npc, 1.0)
-	Citizen.Wait(1000)
-	TaskPlayAnim(player, anim2.dict, anim2.name, 2.0, -2.0, -1, 1, 0, false, false, false)
-	TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
-	if Config.ProgressBars then exports['progressBars']:startUI(5000, Lang['pb_searching_ped']) end
-	Citizen.Wait(5000)
-	TriggerServerEvent('t1ger_heistpreps:keycard:searchedKeys', 'keycard', id)
+        TaskTurnPedToFaceEntity(player, keycard_data[id].npc, 1.0)
+        Wait(1000)
+        TaskPlayAnim(player, anim2.dict, anim2.name, 2.0, -2.0, -1, 1, 0, false, false, false)
+        TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
+        if not useProgress(5000, Lang['pb_searching_ped']) then
+                ClearPedTasks(player)
+                return
+        end
+        TriggerServerEvent('t1ger_heistpreps:keycard:searchedKeys', 'keycard', id)
 	local sender, subject = Lang['keycard_setup_job'], Lang['encrypted_message']
     local msg = Lang['trucks_tracked_down']
     local textureDict, iconType = 'CHAR_LESTER', 7
     TriggerEvent('t1ger_heistpreps:notifyAdvanced', sender, subject, msg, textureDict, iconType)
 	ClearPedTasks(player)
-	Citizen.Wait(1000)
+	Wait(1000)
 	NetworkFadeOutEntity(keycard_data[id].npc, false, false)
-	Citizen.Wait(1000)
+	Wait(1000)
 	DeleteEntity(keycard_data[id].npc)
 	keycard_data[id].npc = false
 
@@ -969,11 +1001,11 @@ function UnlockAndSearchTruck(id,val,num,bankTruck)
 	TaskPlayAnim(player, anim.dict, anim.name, 15.0, -10.0, 1500, 49, 0, false, false, false)
 	PlaySoundFromEntity(-1, "Remote_Control_Fob", player, "PI_Menu_Sounds", 1, 0)
 	SetVehicleLights(bankTruck,2)
-	Citizen.Wait(200)
+	Wait(200)
 	SetVehicleLights(bankTruck,1)
-	Citizen.Wait(200)
+	Wait(200)
 	SetVehicleLights(bankTruck,2)
-	Citizen.Wait(200)
+	Wait(200)
 	if Config.T1GER_Keys then 
 		exports['t1ger_keys']:SetVehicleLocked(bankTruck, 0)
 	else
@@ -983,35 +1015,38 @@ function UnlockAndSearchTruck(id,val,num,bankTruck)
 	SetVehicleDoorOpen(bankTruck, 2, false, false)
 	SetVehicleDoorOpen(bankTruck, 3, false, false)
 	-- end animation:
-	Citizen.Wait(200)
+	Wait(200)
 	SetVehicleLights(bankTruck,1)
 	SetVehicleLights(bankTruck,0)
-	Citizen.Wait(200)
+	Wait(200)
 	DeleteEntity(keyFob)
 	-- Animation for searching:
-	Citizen.Wait(500)
+	Wait(500)
 	local anim = {dict = 'anim@gangops@facility@servers@bodysearch@', name = 'player_search'}
 	T1GER_LoadAnim(anim.dict)
-	local closestPlayer, dist = ESX.Game.GetClosestPlayer()
+    local closestPlayer, dist = QBCore.Functions.GetClosestPlayer()
 	if closestPlayer ~= -1 and dist <= 2.0 then
 		if IsEntityPlayingAnim(GetPlayerPed(closestPlayer), anim.dict, anim.name, 3) then
 			return TriggerEvent('t1ger_heistpreps:notify', Lang['truck_being_searched'])
 		end
 	end
-	TaskTurnPedToFaceEntity(player, vehicle, 1.0)
-	Citizen.Wait(500)
-	FreezeEntityPosition(player, true)
-	TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
-	if Config.ProgressBars then exports['progressBars']:startUI(5000, Lang['pb_searching_truck']) end
-	Citizen.Wait(5000)
-	FreezeEntityPosition(player, false)
-	ClearPedTasks(player)
+        TaskTurnPedToFaceEntity(player, bankTruck, 1.0)
+        Wait(500)
+        FreezeEntityPosition(player, true)
+        TaskPlayAnim(player, anim.dict, anim.name, 2.0, -2.0, -1, 48, 0, false, false, false)
+        if not useProgress(5000, Lang['pb_searching_truck']) then
+                FreezeEntityPosition(player, false)
+                ClearPedTasks(player)
+                return
+        end
+        FreezeEntityPosition(player, false)
+        ClearPedTasks(player)
 	TriggerServerEvent('t1ger_heistpreps:keycard:truckSearched', 'keycard', id, num)
 	if keycard_t_blips[num] ~= nil and DoesBlipExist(keycard_t_blips[num]) then RemoveBlip(keycard_t_blips[num]) end 
-	Citizen.Wait(2000)
+	Wait(2000)
 	if keycard_data[id].trucks[num] ~= nil and DoesEntityExist(keycard_data[id].trucks[num]) then
 		NetworkFadeOutEntity(keycard_data[id].trucks[num], false, false)
-		Citizen.Wait(1000)
+		Wait(1000)
 		DeleteEntity(keycard_data[id].trucks[num])
 		keycard_data[id].trucks[num] = false
 	end
@@ -1026,7 +1061,7 @@ AddEventHandler('t1ger_heistpreps:keycard:resetCurJob', function(type, num)
 			RemoveBlip(keycard_t_blips[i])
 		end
 	end
-	Citizen.Wait(3000)
+	Wait(3000)
 	keycard_t_blips = {}
 	keycard_blips = {}
 	hasJob = false
@@ -1034,7 +1069,7 @@ end)
 
 RegisterNetEvent('t1ger_heistpreps:keycard:resetCurJob2')
 AddEventHandler('t1ger_heistpreps:keycard:resetCurJob2', function(num)
-	Citizen.Wait(3000)
+	Wait(3000)
 	keycard_data[num] = nil
 end)
 

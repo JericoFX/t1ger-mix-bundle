@@ -3,6 +3,7 @@
 ------------------------------------- 
 
 Lang = {
+  ['notify_title']            = 'Bank Robbery',
   -- POLICE:
   ['dispatch_name']         	= '^5 Dispatch: ',
   ['police_notify']         	= '^0[BANK ROBBERY] - Alarm has been triggered in ^1%s^0 at ^3%s^0',

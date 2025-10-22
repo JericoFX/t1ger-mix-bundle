@@ -17,6 +17,24 @@ local itemIcons = {
     goldwatch = 'goldwatch.png'
 }
 
+local activeMiningSpots = {}
+
+local function releaseMiningSpot(playerId)
+    if not playerId then return end
+
+    local spotId = activeMiningSpots[playerId]
+    if not spotId then return end
+
+    activeMiningSpots[playerId] = nil
+
+    if not Config.Mining[spotId] then return end
+
+    if Config.Mining[spotId].inUse then
+        Config.Mining[spotId].inUse = false
+        TriggerClientEvent('t1ger_minerjob:mineSpotStateCL', -1, spotId, false)
+    end
+end
+
 local function ensureAmount(value)
     local amount = tonumber(value) or 0
     amount = math.floor(amount)
@@ -101,8 +119,30 @@ end)
 RegisterNetEvent('t1ger_minerjob:mineSpotStateSV', function(id, state)
     if not Config.Mining[id] then return end
 
-    Config.Mining[id].inUse = state and true or false
+    local src = source
+    local isActive = state and true or false
+
+    Config.Mining[id].inUse = isActive
+
+    if isActive then
+        if activeMiningSpots[src] and activeMiningSpots[src] ~= id then
+            releaseMiningSpot(src)
+        end
+
+        activeMiningSpots[src] = id
+    elseif activeMiningSpots[src] == id then
+        activeMiningSpots[src] = nil
+    end
+
     TriggerClientEvent('t1ger_minerjob:mineSpotStateCL', -1, id, Config.Mining[id].inUse)
+end)
+
+AddEventHandler('playerDropped', function()
+    releaseMiningSpot(source)
+end)
+
+RegisterNetEvent('QBCore:Server:OnPlayerDropped', function(playerId)
+    releaseMiningSpot(playerId)
 end)
 
 RegisterNetEvent('t1ger_minerjob:miningReward', function(item, amount)

@@ -44,6 +44,20 @@ local function createBlips(entries)
     end
 end
 
+local registeredPoints = {}
+
+local function cleanupPoints()
+    for index = #registeredPoints, 1, -1 do
+        local point = registeredPoints[index]
+        hidePrompt(point)
+
+        if point.remove then
+            point:remove()
+        end
+        registeredPoints[index] = nil
+    end
+end
+
 local function startMining(id, data)
     if miningState.active or data.inUse then return end
 
@@ -249,10 +263,16 @@ CreateThread(function()
     createBlips(Config.Smelting)
 end)
 
-local registeredPoints = {}
 registerInteraction(registeredPoints, startMining, miningState, Config.Mining)
 registerInteraction(registeredPoints, startWashing, washingState, Config.Washing)
 registerInteraction(registeredPoints, startSmelting, smeltingState, Config.Smelting)
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+
+    cleanupPoints()
+    lib.hideTextUI()
+end)
 
 RegisterNetEvent('t1ger_minerjob:mineSpotStateCL', function(id, state)
     if Config.Mining[id] then

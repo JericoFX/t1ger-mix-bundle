@@ -1,52 +1,65 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
 Config = {}
 
-Config.ESXSHAREDOBJECT 		= "esx:getSharedObject"		-- ESX Shared Object (only change incase you are using anti-cheats or custom triggers).
-Config.VehiclesTable 		= 'owned_vehicles'			-- database table name for your player owned vehicles.
-Config.BuyWithOnlineBrokers = true						-- set to false to prevent players from buying insurance, when brokers are online.
-Config.HasModelNameInTable 	= true						-- set to false if u dont have model column in your owned_vehicles table, displaying the model name of the vehicle.
+Config.Database = {
+        table = 'player_vehicles',                        -- database table containing owned vehicles
+        ownerColumn = 'citizenid',                        -- column that stores the owner identifier
+        vehicleColumn = 'mods',                           -- column that stores the vehicle properties as JSON
+        plateColumn = 'plate',                            -- column that stores the plate
+        insuranceColumn = 'insurance',                    -- boolean/tinyint column used to store insurance state
+        modelColumn = 'vehicle',                          -- optional column containing the spawn name/model (set to false when not available)
+        priceLookup = {                                   -- optional price lookup for dynamic pricing (set to false to disable)
+                table = 'vehicles',                       -- table that contains vehicle prices
+                joinColumn = 'model',                     -- column used to match against modelColumn
+                priceColumn = 'price'                     -- column storing vehicle price
+        }
+}
+
+Config.BuyWithOnlineBrokers = true                      -- when enabled, players can only buy insurance if no brokers are on duty.
 
 Config.Insurance = {
 
-	job = {
-		name = 'insurance',				-- change only if u have changed the job name in database,
-		sync_time = 1,					-- timer in minutes to fetch online brokers and send to all clients, don't go below 1.
-		society = {						-- requires esx_society
-			withdraw  = true,			-- boss can withdraw money from account
-			deposit   = true,			-- boss can deposit money into account
-			wash      = false,			-- boss can wash money
-			employees = true,			-- boss can manage & recruit employees
-			grades    = false			-- boss can adjust all salaries for each job grade
-		},
-		menu = {
-			keybind = 167,
-			command = 'insurance',
-		}
-	},
+        job = {
+                name = 'insurance',                      -- job name configured in qb-core
+                sync_time = 1,                           -- minutes between broker sync broadcasts (minimum 1)
+                requireDuty = true,                      -- count only brokers that are on duty
+                managementAccount = 'insurance',         -- qb-management society account (set to false to disable deposits)
+                menu = {
+                        keybind = 167,                   -- default F6
+                        command = 'insurance'
+                }
+        },
 
-	company = {
-		pos = {-291.38,-429.7,30.24},
-		menuKey = 38,
-		loadDist = 10,
-		interactDist = 1.5,
-		marker = {enable = true, drawDist = 10.0, type = 20, scale = {x = 0.5, y = 0.5, z = 0.5}, color = {r = 240, g = 52, b = 52, a = 100}},
-		blip = {enable = true, sprite = 523, color = 3, label = "Insurance", scale = 0.75, display = 4}
-	},
+        company = {
+                menuKey = 38,
+                loadDist = 10.0,
+                interactDist = 1.5,
+                marker = {enable = true, drawDist = 10.0, type = 20, scale = {x = 0.5, y = 0.5, z = 0.5}, color = {r = 240, g = 52, b = 52, a = 100}},
+                blip = {enable = true, sprite = 523, color = 3, label = 'Insurance', scale = 0.75, display = 4},
+                points = {                                  -- interaction points (supports overrides for menuKey/loadDist/interactDist/marker)
+                        { pos = {-291.38, -429.7, 30.24} }
+                }
+        },
 
-	price = {
-		establish = 20,					-- percentage of vehicle price in upfront amount for the insurance agreement.
-		subscription = 3,				-- percentage of vehicle price as payment every x salary clicks.
+        price = {
+                establish = 20,                          -- percentage of vehicle price billed upfront (requires price lookup)
+                subscription = 3,                        -- percentage of vehicle price billed periodically
+                upfront = 2000,                          -- fallback upfront price when price lookup is missing
+                payment = 150                            -- fallback subscription price
+        },
 
-		-- if not having model name in database, then below fixed amounts are used:
-		upfront = 2000,					-- fixed price to establish an insurance agreement
-		payment = 150					-- fixed price as payment every x salary clicks.
-	},
-	
-	paper = {
-		keyToHidePaper = 177			-- DEFAULT BACKSPACE, ESX, RIGHTMOUSE - set key control to hide insurance paper, when it's opened
-	}
+        cooldowns = {
+                buy = 2,                                 -- minutes between insurance purchases
+                cancel = 2,                              -- minutes between cancellations
+                claim = 5                                -- minutes between claim/lookups
+        },
+
+        cache = {
+                owners = 2,                              -- minutes to cache owned vehicle lookups (set to 0 to disable)
+                plates = 2                               -- minutes to cache plate lookups (set to 0 to disable)
+        }
 
 }

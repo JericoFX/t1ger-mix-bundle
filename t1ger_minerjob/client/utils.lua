@@ -1,89 +1,108 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-ESX = exports['es_extended']:getSharedObject()
-PlayerData 	= {}
+local QBCore = exports['qb-core']:GetCoreObject()
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
+PlayerData = {}
+local textUIVisible = false
+local currentUIText
+local currentOwner
+
+local function refreshPlayerData()
+    PlayerData = QBCore.Functions.GetPlayerData() or {}
+end
+
+CreateThread(function()
+    refreshPlayerData()
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    refreshPlayerData()
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    PlayerData = {}
 end)
 
--- [[ ESX SHOW ADVANCED NOTIFICATION ]] --
-RegisterNetEvent('t1ger_minerjob:ShowAdvancedNotifyESX')
-AddEventHandler('t1ger_minerjob:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
-	ESX.ShowAdvancedNotification(title, subject, msg, icon, iconType)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
-	
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+    PlayerData.job = job
 end)
 
--- [[ ESX SHOW NOTIFICATION ]] --
-RegisterNetEvent('t1ger_minerjob:ShowNotifyESX')
-AddEventHandler('t1ger_minerjob:ShowNotifyESX', function(msg)
-	ShowNotifyESX(msg)
+local function buildNotification(data)
+    if type(data) == 'string' then
+        data = { description = data }
+    end
+
+    data.type = data.type or 'inform'
+    data.description = data.description or ''
+    data.position = data.position or 'top'
+
+    return data
+end
+
+RegisterNetEvent('t1ger_minerjob:client:notify', function(data)
+    if not data then return end
+    lib.notify(buildNotification(data))
 end)
 
-function ShowNotifyESX(msg)
-	ESX.ShowNotification(msg)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
+function ShowNotify(data)
+    lib.notify(buildNotification(data))
 end
 
--- Function for 3D text:
-function DrawText3Ds(x,y,z, text)
-    local onScreen,_x,_y=World3dToScreen2d(x,y,z)
-    local px,py,pz=table.unpack(GetGameplayCamCoords())
-    SetTextScale(0.32, 0.32)
-    SetTextFont(4)
-    SetTextProportional(1)
-    SetTextColour(255, 255, 255, 255)
-    SetTextEntry("STRING")
-    SetTextCentre(1)
-    AddTextComponentString(text)
-    DrawText(_x,_y)
-    local factor = (string.len(text)) / 500
-    DrawRect(_x,_y+0.0125, 0.015+ factor, 0.03, 0, 0, 0, 80)
+function ShowInteraction(text, owner)
+    if textUIVisible and currentUIText == text and currentOwner == owner then
+        return
+    end
+
+    currentUIText = text
+    currentOwner = owner
+    lib.showTextUI(text)
+    textUIVisible = true
 end
 
--- Load Anim
-function LoadAnim(animDict)
-	RequestAnimDict(animDict)
-	while not HasAnimDictLoaded(animDict) do Citizen.Wait(10) end
+function HideInteraction(owner)
+    if not textUIVisible then return end
+    if owner and currentOwner and owner ~= currentOwner then return end
+
+    lib.hideTextUI()
+    textUIVisible = false
+    currentUIText = nil
+    currentOwner = nil
 end
 
--- Load Model:
-function LoadModel(model)
-	RequestModel(model)
-	while not HasModelLoaded(model) do Citizen.Wait(10) end
+function RequestAnim(dict)
+    lib.requestAnimDict(dict)
 end
 
--- Round Fnction:
-function round(num, numDecimalPlaces)
-    local mult = 10^(numDecimalPlaces or 0)
-    return math.floor(num * mult + 0.5) / mult
+function RequestModel(model)
+    lib.requestModel(model)
 end
 
--- Comma Function:
-function comma_value(n) -- credit http://richard.warburton.it
-	local left,num,right = string.match(n,'^([^%d]*%d)(%d*)(.-)$')
-	return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
-end
+local controlLabels = {
+    [38] = 'E',
+    [51] = 'E',
+    [47] = 'G',
+    [23] = 'F',
+    [74] = 'H',
+    [29] = 'B',
+}
 
--- Function to return key str:
 function KeyString(input)
-	local keyStr = GetControlInstructionalButton(0, input, true):gsub('t_', '')
-	return keyStr
+    local label = controlLabels[input]
+    if not label then
+        local controlName = GetControlInstructionalButton(0, input, true)
+        if controlName then
+            local parsed = controlName:match('~INPUT_(.+)~')
+            if parsed then
+                label = parsed
+            end
+        end
+    end
+
+    if not label or label == '' then
+        label = tostring(input)
+    end
+
+    return ('[%s]'):format(label)
 end

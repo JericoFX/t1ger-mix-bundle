@@ -1,29 +1,37 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
 Lang = {
-	-- Menu Text:
-	['button_yes']         	    = 'Yes',
-	['button_no']         	    = 'No',
-	['button_return']         	= 'Return',
+        -- Menu Text:
+        ['button_yes']              = 'Yes',
+        ['button_no']               = 'No',
+        ['button_return']           = 'Return',
 
-	-- NOTIFICATIONS
-	['not_enough_money']        = 'You do not have enough money.',
-	['invalid_amount']          = 'Invalid Amount',
-	['item_limit_exceed']       = '~y~%s~s~ limit ~r~exceeded~s~, you can max carry ~g~%s~s~.',
-	['no_pickaxe']          	= 'You need a ~y~pickaxe~s~ in your inventory.',
-	['no_washpan']          	= 'You need a ~y~washpan~s~ in your inventory.',
-	['stone_mined']          	= 'You mined ~b~%sx~s~ ~y~%s~s~.',
-	['stone_washed']          	= 'You washed and received ~b~%sx~s~ ~y~%s~s~.',
-	['not_enough_stone']        = 'You need ~y~10x stone~s~ to start the ~b~washing~s~ process.',
-	['player_too_close']        = 'You are too close to another player.',
-	['not_enough_washed_stone'] = 'You need ~b~10x washed stone~s~ to start the ~y~smelting~s~ process.',
-	['smelt_reward']          	= 'You smeleted and received ~b~%sx~s~ ~y~%s~s~.',
-	
-	-- PROGRESS BARS
-	['pb_mining']        		= 'MINING',
-	['pb_washing']        		= 'WASHING STONE',
-	['pb_smelting']        		= 'SMELTING',
+        -- NOTIFICATIONS
+        ['not_enough_money']        = 'You do not have enough money.',
+        ['invalid_amount']          = 'Invalid Amount',
+        ['item_limit_exceed']       = '%s limit exceeded, you can carry a maximum of %s.',
+        ['no_pickaxe']              = 'You need a pickaxe in your inventory.',
+        ['no_washpan']              = 'You need a washpan in your inventory.',
+        ['spot_unavailable']        = 'That mining spot is currently unavailable.',
+        ['invalid_spot']            = 'Unable to find that mining spot.',
+        ['stone_mined']             = 'You mined %sx %s.',
+        ['stone_washed']            = 'You washed and received %sx %s.',
+        ['not_enough_stone']        = 'You need 10x stone to start the washing process.',
+        ['player_too_close']        = 'You are too close to another player.',
+        ['not_enough_washed_stone'] = 'You need 10x washed stone to start the smelting process.',
+        ['smelt_reward']            = 'You smelted and received %sx %s.',
+        ['process_cancelled']       = 'Process cancelled.',
+        ['inventory_full']          = 'You cannot carry more %s.',
 
-}  
+        -- UI
+        ['ui_mine']                 = 'Press %s to mine',
+        ['ui_wash']                 = 'Press %s to wash stone',
+        ['ui_smelt']                = 'Press %s to smelt',
+
+        -- Progress Labels
+        ['pb_mining']               = 'Mining ore',
+        ['pb_washing']              = 'Washing stone',
+        ['pb_smelting']             = 'Smelting',
+}

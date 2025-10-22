@@ -4,13 +4,13 @@
 https://youtu.be/nnlzvzjsh1Y
 
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore Framework](https://github.com/qbcore-framework/qb-core)
 
 ## DEPENCENCIES:
+- [ox_lib (REQUIRED)](https://github.com/overextended/ox_lib)
 - [Meta Libs (REQUIRED)](https://github.com/meta-hub/meta_libs/releases/tag/v1.31)
 - [Fivem Drilling (REQUIRED)](https://gitlab.com/t1ger-scripts/t1ger-requirements/-/tree/main/fivem-drilling)
 - [Yacht Vault MLO (REQUIRED)](https://cdn.discordapp.com/attachments/694892962974269461/1062513446014439505/yachtheist.zip)
-- [ProgressBars (OPTIONAL)](https://gitlab.com/t1ger-scripts/t1ger-requirements/-/tree/main/progressBars)
 - [mHacking (OPTIONAL)](https://github.com/justgreatgaming/FiveM-Scripts-2/tree/master/mhacking)
 
 ## INSTALLATION:

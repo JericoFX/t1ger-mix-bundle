@@ -3,17 +3,19 @@
 ------------------------------------- 
 
 Config = {
-	Debug = true, -- allows you to restart script while in-game, otherwise u need to restart fivem.
+Debug = true, -- allows you to restart script while in-game, otherwise u need to restart fivem.
     ProgressBars = true, -- set to false if you do not use progressBars or using your own
-	T1GER_Keys = true, -- true/false whether you own or not own t1ger-keys
-	T1GER_Garage = true, -- true/false whether you own or not own t1ger-garage
-	T1GER_Dealerships = true, -- true/false whether you own or not own t1ger-dealerships
-	BuyWithBank = true, -- buy tow service with bank money, false = cash.
-	SalePercentage = 0.75, -- Means player gets 75% in return from original paid price.
-	AccountsInCash = false, -- Set to false to deposit/withdraw money into and from shop account with bank-money instead of cash money.
-	PayBillsWithBank = true, -- Pay bills with bank, set to false to pay with cash.
-	BillPercentToService = 25, -- Set percent value (0-100) of how much goes to service/company and how much to towtrucker player. 25 means: 25 to service, 75 to player
-	InteractionMenuCmd = 'towtrucker', -- command to open towtrucking menu	
+T1GER_Keys = true, -- true/false whether you own or not own t1ger-keys
+T1GER_Garage = true, -- true/false whether you own or not own t1ger-garage
+T1GER_Dealerships = true, -- true/false whether you own or not own t1ger-dealerships
+BuyWithBank = true, -- buy tow service with bank money, false = cash.
+SalePercentage = 0.75, -- Means player gets 75% in return from original paid price.
+PayBillsWithBank = true, -- Pay bills with bank, set to false to pay with cash.
+BillPercentToService = 25, -- Set percent value (0-100) of how much goes to service/company and how much to towtrucker player. 25 means: 25 to service, 75 to player
+InteractionMenuCmd = 'towtrucker', -- command to open towtrucking menu
+BossGrade = 2, -- fallback boss grade for legacy job configs
+InvoiceLimits = {min = 50, max = 5000}, -- invoice amount boundaries
+RewardLimits = {min = 150, max = 650, cooldown = 60}, -- min/max per payout and cooldown (seconds)
 }
 
 -- Tow Services:
@@ -62,39 +64,19 @@ Config.KeyControls = {
 	['use_repairkit'] = 38,
 }
 
-Config.Society = { -- requires esx_society (set settings for what boss can do in each dealerships)
-	['towtrucker1'] = {
-		-- register society:
-		name = 'towtrucker1', -- job name 
-		label = 'Tow Trucker', -- job label
-		account = 'society_towtrucker1', -- society account
-		datastore = 'society_towtrucker1', -- society datastore
-		inventory = 'society_towtrucker1', -- society inventory
-		boss_grade = 2, -- boss grade number to apply upon purchase
-		data = {type = 'private'},
-		-- settings:
-		withdraw  = true, -- boss can withdraw money from account
-		deposit   = true, -- boss can deposit money into account
-		wash      = false, -- boss can wash money
-		employees = true, -- boss can manage & recruit employees
-		grades    = false -- boss can adjust all salaries for each job grade
-	},
-	['towtrucker2']  = {
-		-- register society:
-		name = 'towtrucker2', -- job name 
-		label = 'Tow Trucker', -- job label
-		account = 'society_towtrucker2', -- society account
-		datastore = 'society_towtrucker2', -- society datastore
-		inventory = 'society_towtrucker2', -- society inventory
-		boss_grade = 2, -- boss grade number to apply upon purchase
-		data = {type = 'private'},
-		-- settings:
-		withdraw  = true, -- boss can withdraw money from account
-		deposit   = true, -- boss can deposit money into account
-		wash      = false, -- boss can wash money
-		employees = true, -- boss can manage & recruit employees
-		grades    = false -- boss can adjust all salaries for each job grade
-	},
+Config.Society = { -- society definitions used for QBCore job + management integrations
+['towtrucker1'] = {
+name = 'towtrucker1', -- job name
+label = 'Tow Trucker', -- job label
+account = 'towtrucker1', -- society account identifier for qb-management
+boss_grade = 2, -- boss grade number to apply upon purchase
+},
+['towtrucker2']  = {
+name = 'towtrucker2', -- job name
+label = 'Tow Trucker', -- job label
+account = 'towtrucker2', -- society account identifier for qb-management
+boss_grade = 2, -- boss grade number to apply upon purchase
+},
 }
 
 -- Garage Spawner:

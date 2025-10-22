@@ -19,6 +19,12 @@ Lang = {
 	['tow_service_renamed']		= '~g~Tow Service has been renamed.~s~',
 	['get_account_balance']  	= 'Current Account Balance: ~g~$%s~s~.',
 	['boss_menu_no_access']  	= 'You do not have access to the boss menu.',
+	['no_service_access']		= 'You are not authorized to manage this tow service.',
+	['invoice_sent']		= 'Invoice has been submitted.',
+	['invoice_failed']		= 'Unable to process invoice.',
+	['invoice_invalid']	= 'The requested invoice amount is not allowed.',
+	['invoice_paid']		= 'Tow company charged you ~r~$%s~s~.',
+
 	
 	['no_impound_vehicles']		= 'No impounded vehicles to display.',
 	['veh_already_in_impound']  = 'Vehicle already registered in this impound.',
@@ -54,6 +60,9 @@ Lang = {
 	['job_thanking_msg']        = 'Thank you very much, adios! Here\'s your payment.',
 	['job_veh_delivered']       = 'Vehicle has been impounded.',
 	['job_cash_reward']     	= 'You received: ~g~$%s~s~.',
+	['job_reward_invalid']	= 'Dispatch rejected the reported payout.',
+	['job_reward_cooldown']	= 'Please finish the current job before requesting another payout.',
+
 
 	['repairkit_used']  		= 'Vehicle engine repaired using a repairkit.',
 

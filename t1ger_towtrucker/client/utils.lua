@@ -2,53 +2,72 @@
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
 
-ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports['qb-core']:GetCoreObject()
 PlayerData = {}
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
-	if Config.Debug then
-		Citizen.Wait(2000)
-		TriggerServerEvent('t1ger_towtrucker:debugSV')
-	end
+local function cachePlayerJob()
+if not PlayerData or not PlayerData.job then return end
+for i = 1, #Config.TowServices do
+local towtruckerJob = Config.Society[Config.TowServices[i].society].name
+if PlayerData.job.name == towtruckerJob then
+TriggerEvent('t1ger_towtrucker:setTowID', i)
+return
+end
+end
+TriggerEvent('t1ger_towtrucker:setTowID', 0)
+end
+
+local function setPlayerData(data)
+PlayerData = data or {}
+cachePlayerJob()
+end
+
+CreateThread(function()
+setPlayerData(QBCore.Functions.GetPlayerData())
+if Config.Debug then
+Wait(2000)
+TriggerServerEvent('t1ger_towtrucker:debugSV')
+end
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+setPlayerData(QBCore.Functions.GetPlayerData())
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
-	for i = 1, #Config.TowServices do
-		local towtruckerJob = Config.Society[Config.TowServices[i].society].name
-		if PlayerData.job.name == towtruckerJob then
-			TriggerEvent('t1ger_towtrucker:setTowID', i)
-			break
-		else
-			if i == #Config.TowServices then
-				TriggerEvent('t1ger_towtrucker:setTowID', 0)
-				break
-			end
-		end
-	end
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+if not PlayerData then PlayerData = {} end
+PlayerData.job = job
+cachePlayerJob()
 end)
+
+RegisterNetEvent('QBCore:Player:SetPlayerData', function(data)
+setPlayerData(data)
+end)
+
+local function notify(message, notifType, opts)
+if not message then return end
+lib.notify({
+title = opts and opts.title or 'Tow Trucker',
+description = message,
+type = notifType or 'inform',
+duration = opts and opts.duration or 5000,
+icon = opts and opts.icon,
+iconColor = opts and opts.iconColor
+})
+end
 
 -- Notification
-RegisterNetEvent('t1ger_towtrucker:notify')
-AddEventHandler('t1ger_towtrucker:notify', function(msg)
-	ESX.ShowNotification(msg)
+RegisterNetEvent('t1ger_towtrucker:notify', function(msg, notifType)
+notify(msg, notifType)
 end)
 
 -- Advanced Notification
-RegisterNetEvent('t1ger_towtrucker:notifyAdvanced')
-AddEventHandler('t1ger_towtrucker:notifyAdvanced', function(textureDict, textureName, iconType, title, showInBrief, subtitle, message)
-    RequestStreamedTextureDict(textureDict)
-    BeginTextCommandThefeedPost("STRING")
-    AddTextComponentSubstringPlayerName(message)
-    EndTextCommandThefeedPostMessagetext(textureDict, textureName, false, iconType, title, subtitle)
-    EndTextCommandThefeedPostTicker(false, showInBrief)
+RegisterNetEvent('t1ger_towtrucker:notifyAdvanced', function(textureDict, textureName, iconType, title, showInBrief, subtitle, message)
+notify(message, iconType == 1 and 'success' or 'inform', {
+title = title or subtitle or 'Tow Trucker',
+duration = showInBrief and 8000 or 5000,
+icon = textureName ~= '' and textureName or 'truck-pickup'
+})
 end)
 
 function T1GER_DrawTxt(x, y, z, text)
@@ -82,23 +101,45 @@ function T1GER_LoadModel(model)
 end
 
 function T1GER_isJob(name)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	if PlayerData.job.name == name then
-		return true
-	end
-	return false
+if not PlayerData then return false end
+if not PlayerData.job then return false end
+if PlayerData.job.name == name then
+return true
+end
+return false
 end
 
 function T1GER_GetJob(table)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	for k,v in pairs(table) do
-		if PlayerData.job.name == v then
-			return true
-		end
-	end
-	return false
+if not PlayerData then return false end
+if not PlayerData.job then return false end
+for k,v in pairs(table) do
+if PlayerData.job.name == v then
+return true
+end
+end
+return false
+end
+
+function T1GER_GetJobGrade()
+if not PlayerData or not PlayerData.job then return 0 end
+local grade = PlayerData.job.grade
+if type(grade) == 'table' then
+return grade.level or grade.grade or 0
+end
+return grade or 0
+end
+
+function T1GER_IsBoss()
+if not PlayerData or not PlayerData.job then return false end
+if PlayerData.job.isboss ~= nil then
+return PlayerData.job.isboss
+end
+local grade = PlayerData.job.grade
+if type(grade) == 'table' then
+if grade.isboss ~= nil then return grade.isboss end
+return (grade.name and grade.name:lower() == 'boss') or (grade.level and grade.level >= (Config.BossGrade or grade.level))
+end
+return grade ~= nil and grade >= (Config.BossGrade or grade)
 end
 
 -- Function to Display Help Text:

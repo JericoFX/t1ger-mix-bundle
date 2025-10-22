@@ -7,11 +7,11 @@ https://youtu.be/XAqOKMiFlcI
 https://forum.cfx.re/t/esx-t1ger-tow-trucker-jobs-ownable-services-custom-impounds-more/4822585/
 
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore](https://github.com/qbcore-framework/qb-core)
 
-## DEPENCENCIES:
-- [ESX Society (OPTIONAL)](https://github.com/esx-framework/esx_society)
-- [ESX Addon Accounts (OPTIONAL)](https://github.com/esx-framework/esx_addonaccount)
+## DEPENDENCIES:
+- [ox_lib](https://github.com/overextended/ox_lib)
+- [oxmysql](https://github.com/overextended/oxmysql)
 - [ProgressBars (OPTIONAL)](https://gitlab.com/t1ger-scripts/t1ger-requirements/-/tree/main/progressBars)
 
 ## DOCUMENTATION:

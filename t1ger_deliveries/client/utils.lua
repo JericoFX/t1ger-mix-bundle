@@ -1,55 +1,73 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
-ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports['qb-core']:GetCoreObject()
 PlayerData = {}
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
+CreateThread(function()
+PlayerData = QBCore.Functions.GetPlayerData()
+UpdateDeliveryIdentifier()
 
-	if Config.Debug then
-		Citizen.Wait(3000)
-		TriggerServerEvent('t1ger_deliveries:debugSV')
-	end
+if Config.Debug then
+Wait(3000)
+TriggerServerEvent('t1ger_deliveries:debugSV')
+end
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+PlayerData = QBCore.Functions.GetPlayerData()
+UpdateDeliveryIdentifier()
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+PlayerData.job = job
+UpdateDeliveryIdentifier()
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
-	for i = 1, #Config.Companies do
-		local deliveryJob = Config.Society[Config.Companies[i].society].name
-		if PlayerData.job.name == deliveryJob then
-			TriggerEvent('t1ger_deliveries:deliveryID', i)
-			break
-		else
-			if i == #Config.Companies then
-				TriggerEvent('t1ger_deliveries:deliveryID', 0)
-				break
-			end
-		end
-	end
+RegisterNetEvent('QBCore:Client:SetPlayerData', function(val)
+PlayerData = val
+UpdateDeliveryIdentifier()
 end)
 
--- Notification
-RegisterNetEvent('t1ger_deliveries:notify')
-AddEventHandler('t1ger_deliveries:notify', function(msg)
-	ESX.ShowNotification(msg)
+function UpdateDeliveryIdentifier()
+if not PlayerData or not PlayerData.job then return end
+for i = 1, #Config.Companies do
+local deliveryJob = Config.Society[Config.Companies[i].society].name
+if PlayerData.job.name == deliveryJob then
+TriggerEvent('t1ger_deliveries:deliveryID', i)
+return
+end
+end
+TriggerEvent('t1ger_deliveries:deliveryID', 0)
+end
+
+local function getNotifyType(msg)
+if type(msg) ~= 'string' then return 'inform' end
+msg = msg:lower()
+if msg:find('success') or msg:find('completed') or msg:find('purchased') then
+return 'success'
+elseif msg:find('error') or msg:find('not enough') or msg:find('fail') or msg:find('mismatch') then
+return 'error'
+elseif msg:find('warning') or msg:find('alert') then
+return 'warning'
+end
+return 'inform'
+end
+
+RegisterNetEvent('t1ger_deliveries:notify', function(msg)
+lib.notify({
+title = Lang['notify_title'] or 'Deliveries',
+description = msg,
+type = getNotifyType(msg)
+})
 end)
 
--- Advanced Notification
-RegisterNetEvent('t1ger_deliveries:notifyAdvanced')
-AddEventHandler('t1ger_deliveries:notifyAdvanced', function(sender, subject, msg, textureDict, iconType)
-	ESX.ShowAdvancedNotification(sender, subject, msg, textureDict, iconType, false, false, false)
+RegisterNetEvent('t1ger_deliveries:notifyAdvanced', function(sender, subject, msg, textureDict, iconType)
+lib.notify({
+title = sender or (Lang['notify_title'] or 'Deliveries'),
+description = subject and (subject .. '\n' .. msg) or msg,
+type = getNotifyType(msg)
+})
 end)
 
 -- Draw 3D Text:
@@ -75,17 +93,29 @@ end
 
 -- Load Anim
 function T1GER_LoadAnim(animDict)
-	RequestAnimDict(animDict); while not HasAnimDictLoaded(animDict) do Citizen.Wait(1) end
+        if lib and lib.requestAnimDict then
+                lib.requestAnimDict(animDict)
+                return
+        end
+        RequestAnimDict(animDict); while not HasAnimDictLoaded(animDict) do Citizen.Wait(1) end
 end
 
 -- Load Model
 function T1GER_LoadModel(model)
-	RequestModel(model); while not HasModelLoaded(model) do Citizen.Wait(1) end
+        if lib and lib.requestModel then
+                lib.requestModel(model)
+                return
+        end
+        RequestModel(model); while not HasModelLoaded(model) do Citizen.Wait(1) end
 end
 
 -- Load Ptfx
 function T1GER_LoadPtfxAsset(dict)
-	RequestNamedPtfxAsset(dict); while not HasNamedPtfxAssetLoaded(dict) do Citizen.Wait(1) end
+        if lib and lib.requestNamedPtfxAsset then
+                lib.requestNamedPtfxAsset(dict)
+                return
+        end
+        RequestNamedPtfxAsset(dict); while not HasNamedPtfxAssetLoaded(dict) do Citizen.Wait(1) end
 end
 
 function T1GER_isJob(name)

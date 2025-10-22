@@ -11,6 +11,8 @@ discord 'https://discord.gg/FdHkq5q'
 description 'T1GER Deliveries'
 version '1.0.3'
 
+shared_script '@ox_lib/init.lua'
+
 client_scripts {
 	'language.lua',
 	'config.lua',

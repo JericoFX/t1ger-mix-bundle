@@ -3,18 +3,25 @@
 ------------------------------------- 
 
 Config = {
-    ESX_OBJECT = 'esx:getSharedObject', -- set your shared object event in here
-	Debug = true, -- allows you to restart script while in-game, otherwise u need to restart fivem.
+        Debug = true, -- allows you to restart script while in-game, otherwise u need to restart fivem.
     ProgressBars = true, -- set to false if you do not use progressBars or using your own
-	T1GER_Keys = true, -- true/false whether you own or not own t1ger-keys
-	T1GER_Shops = true, -- true/false whether you own or not own t1ger-shops
-	BuyWithBank = true, -- buy company with bank money, false = cash.
-	SalePercentage = 0.75, -- 
-	CertificatePrice = 15000, -- Set price to purchase certificate
-	DepositInBank = true, -- set to false to pay vehicle deposit with cash money
-	DamagePercent = 5, -- if job veh body health is decreased more than 5%, then no payout for that specific delivery.
-	DepositDamage = 10, -- if vehicle is damaged more than x %, then deposit is not returned.
-	AddLevelAmount = 2, -- Set amount of levels added upon completing a job
+        T1GER_Keys = true, -- true/false whether you own or not own t1ger-keys
+        T1GER_Shops = true, -- true/false whether you own or not own t1ger-shops
+        BuyWithBank = true, -- buy company with bank money, false = cash.
+        SalePercentage = 0.75, --
+        CertificatePrice = 15000, -- Set price to purchase certificate
+        DepositInBank = true, -- set to false to pay vehicle deposit with cash money
+        DamagePercent = 5, -- if job veh body health is decreased more than 5%, then no payout for that specific delivery.
+        DepositDamage = 10, -- if vehicle is damaged more than x %, then deposit is not returned.
+        AddLevelAmount = 2, -- Set amount of levels added upon completing a job
+
+        SocietyVehicleStorage = {
+                table = 'player_vehicles',
+                jobColumn = 'job',
+                propsColumn = 'mods',
+                stateColumn = 'state',
+                availableState = 1
+        }
 }
 
 Config.Companies = {
@@ -88,16 +95,17 @@ Config.MarkerSettings = {
 	['delivery'] = { enable = true, type = 2, scale = {x = 0.35, y = 0.35, z = 0.35}, color = {r = 220, g = 60, b = 60, a = 100} },
 }
 
-Config.Society = { -- requires esx_society (set settings for what boss can do in each dealerships)
+Config.Society = { -- configure qb-management access for each delivery company
 	['delivery1'] = {
 		-- register society:
 		name = 'delivery1', -- job name 
 		label = 'Delivery Job', -- job label
-		account = 'society_delivery1', -- society account
-		datastore = 'society_delivery1', -- society datastore
-		inventory = 'society_delivery1', -- society inventory
-		boss_grade = 1, -- boss grade number to apply upon purchase
-		data = {type = 'private'},
+                account = 'society_delivery1', -- society account
+                datastore = 'society_delivery1', -- society datastore
+                inventory = 'society_delivery1', -- society inventory
+                boss_grade = 1, -- boss grade number to apply upon purchase
+                bossMenuEvent = 'qb-bossmenu:client:OpenMenu', -- event to open boss menu
+                data = {type = 'private'},
 		-- settings:
 		withdraw  = true, -- boss can withdraw money from account
 		deposit   = true, -- boss can deposit money into account
@@ -109,10 +117,11 @@ Config.Society = { -- requires esx_society (set settings for what boss can do in
 		-- register society:
 		name = 'delivery2', -- job name 
 		label = 'Delivery Job', -- job label
-		account = 'society_delivery2', -- society account
-		datastore = 'society_delivery2', -- society datastore
-		inventory = 'society_delivery2', -- society inventory
-		boss_grade = 1, -- boss grade number to apply upon purchase
+                account = 'society_delivery2', -- society account
+                datastore = 'society_delivery2', -- society datastore
+                inventory = 'society_delivery2', -- society inventory
+                boss_grade = 1, -- boss grade number to apply upon purchase
+                bossMenuEvent = 'qb-bossmenu:client:OpenMenu', -- event to open boss menu
 		data = {type = 'private'},
 		-- settings:
 		withdraw  = true, -- boss can withdraw money from account

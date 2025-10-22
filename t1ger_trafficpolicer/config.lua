@@ -1,20 +1,47 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
 Config = {}
 
-Config.Debug = true								-- set this to false when u are done testing etc., and putting files in live server.
+Config.Debug = true -- set this to false when you are done testing etc.
 
 -- General Settings:
-Config.ESXSHAREDOBJECT = 'esx:getSharedObject'	-- set your shared object event in here
-Config.ESX_License = true 						-- set this to false if you don't own esx_license (required to show drivers license on PED-LOOKUP)
-Config.ProgressBars = true						-- set to false if you have installed my version of progressBars.
-Config.T1GER_Insurance = true					-- set to false if you don't own t1ger_insurance
-Config.T1GER_Garage = true 						-- set to false if you don't own t1ger_garage (this is required to update impound state on owned vehicles in garage)
-Config.T1GER_Keys = true 						-- set to false if you don't own t1ger_keys (this is required to update unlocked state of vehicle)
-Config.Jobs = {'police', 'police2'}				-- which police jobs should have access to the features.
-Config.BarricadeSystem = false 					-- set to true if u own Marcus' Barricade System (read bottom of README)
+Config.CoreResource = 'qb-core'
+Config.UseQBLicenses = true -- set this to false if you do not rely on qb-core metadata licences
+Config.ProgressBars = true -- set to false if you have installed my version of progressBars.
+Config.T1GER_Insurance = true -- set to false if you don't own t1ger_insurance
+Config.T1GER_Garage = true -- set to false if you don't own t1ger_garage (this is required to update impound state on owned vehicles in garage)
+Config.T1GER_Keys = true -- set to false if you don't own t1ger_keys (this is required to update unlocked state of vehicle)
+Config.Jobs = {
+    police = 0,
+    police2 = 0
+} -- which police jobs should have access to the features and the minimum grade required.
+Config.BarricadeSystem = false -- set to true if u own Marcus' Barricade System (read bottom of README)
+
+Config.CitationPermissions = {
+    job = 'police',
+    minGrade = 2, -- minimum grade that can issue citations
+    allowList = {} -- add citizenids to always allow regardless of grade
+}
+
+Config.Security = {
+    signatureLength = 24,
+    signatureTTL = 5 * 60, -- seconds citations stay valid for signing
+    useDigitalSignature = true
+}
+
+Config.SpeedDetection = {
+    enable = true,
+    units = 'kmh', -- kmh or mph
+    raycastDistance = 55.0,
+    raycastRadius = 4.5,
+    notifyOnEveryCheck = false,
+    limitBuffer = 3.0,
+    scanInterval = 750,
+    zoneRadius = 6.0,
+    limit = 120.0
+}
 
 -- Menu Settings:
 Config.Command = 'traffic'						-- command to use traffic policer menu	

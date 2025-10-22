@@ -29,22 +29,19 @@ end)
 -- Event to accept/deny breathalyzer test:
 RegisterNetEvent('t1ger_trafficpolicer:acceptBreathalyzerTest')
 AddEventHandler('t1ger_trafficpolicer:acceptBreathalyzerTest', function(newTarget)
-	local elements = {
-		{ label = Lang['button_yes'], value = 'yes', send = true },
-		{ label = Lang['button_no'], value = 'no', send = false },
-	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'provide_bac_test',
-		{
-			title    = Lang['provide_bac_test'],
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		TriggerServerEvent('t1ger_trafficpolicer:sendBreathalyzerTest', newTarget, data.current.send, BAC)
-		menu.close()
-	end, function(data, menu)
-		menu.close()
-	end)
+        local response = lib.alertDialog({
+                header = Lang['provide_bac_test'],
+                content = Lang['provide_test_prompt'],
+                centered = true,
+                cancel = true,
+                labels = {
+                        confirm = Lang['button_yes'],
+                        cancel = Lang['button_no']
+                }
+        })
+
+        local send = response == 'confirm'
+        TriggerServerEvent('t1ger_trafficpolicer:sendBreathalyzerTest', newTarget, send, BAC)
 end)
 
 -- Get Breathalyzer Test Results:
@@ -97,22 +94,19 @@ end)
 -- Event to accept drug swab test:
 RegisterNetEvent('t1ger_trafficpolicer:acceptDrugSwabTest')
 AddEventHandler('t1ger_trafficpolicer:acceptDrugSwabTest', function(newTarget)
-	local elements = {
-		{ label = Lang['button_yes'], value = 'yes', send = true },
-		{ label = Lang['button_no'], value = 'no', send = false },
-	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'accept_drug_swab_test',
-		{
-			title    = Lang['provide_bdc_test'],
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		TriggerServerEvent('t1ger_trafficpolicer:sendDrugSwabTest', newTarget, data.current.send, onDrugs, BDC)
-		menu.close()
-	end, function(data, menu)
-		menu.close()
-	end)
+        local response = lib.alertDialog({
+                header = Lang['provide_bdc_test'],
+                content = Lang['provide_test_prompt'],
+                centered = true,
+                cancel = true,
+                labels = {
+                        confirm = Lang['button_yes'],
+                        cancel = Lang['button_no']
+                }
+        })
+
+        local send = response == 'confirm'
+        TriggerServerEvent('t1ger_trafficpolicer:sendDrugSwabTest', newTarget, send, onDrugs, BDC)
 end)
 
 -- Get Drug Swab Test Results:

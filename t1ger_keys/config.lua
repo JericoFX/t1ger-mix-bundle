@@ -35,7 +35,7 @@ Config = {
 		AnimLib 		= 'fob_click',				-- lock animation lib
 		Prop 			= 'p_car_keys_01',			-- lock animation prop
 		PropPosition	= vector3(0.09,0.04,0.0),	-- pos for prop on player 
-		PropRotation	= vector3(0.09,0.04,0.0),	-- pos for prop on player 
+		PropRotation	= vector3(0.09,0.04,0.0),	-- rotation for prop during the animation
 		PlaySound 		= true,						-- set to false to disable sounds when locking/unlocking
 	},
 

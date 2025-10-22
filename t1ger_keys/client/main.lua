@@ -2,6 +2,8 @@
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
 
+local QBCore = exports['qb-core']:GetCoreObject()
+
 local player, coords = nil, {}
 Citizen.CreateThread(function()
     while true do player = PlayerPedId(); coords = GetEntityCoords(player); Citizen.Wait(500) end
@@ -106,185 +108,344 @@ Citizen.CreateThread(function()
 end)
 
 local window_rolled = false
+local currentContext = nil
+local shopPoints = {}
+local shopTextVisible = false
+
+local function HideShopTextUI()
+        if shopTextVisible and lib and lib.hideTextUI then
+                lib.hideTextUI()
+                shopTextVisible = false
+        end
+end
+
+local function DrawShopMarker(config)
+        if not config.marker or not config.marker.enable then return end
+        local mk = config.marker
+        DrawMarker(mk.type, config.pos.x, config.pos.y, config.pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2, false, false, false, false)
+end
+
+local function CreateShopPoint(config, openMenu)
+        if not lib or not lib.points or not config then return nil end
+        local distance = (config.marker and config.marker.drawDist) or 2.0
+        local point = lib.points.new({
+                coords = config.pos,
+                distance = distance,
+                onExit = function()
+                        HideShopTextUI()
+                        CloseCurrentContext()
+                end,
+                nearby = function(self)
+                        if self.currentDistance <= distance then
+                                if config.marker and config.marker.enable and self.currentDistance > 1.5 then
+                                        DrawShopMarker(config)
+                                        HideShopTextUI()
+                                else
+                                        if not shopTextVisible and lib and lib.showTextUI then
+                                                lib.showTextUI(config.text)
+                                                shopTextVisible = true
+                                        end
+                                        if IsControlJustPressed(0, config.key) then
+                                                HideShopTextUI()
+                                                openMenu(config)
+                                        end
+                                end
+                        else
+                                HideShopTextUI()
+                        end
+                end
+        })
+        return point
+end
+
+local function CloseCurrentContext()
+        if currentContext then
+                lib.hideContext()
+                currentContext = nil
+        end
+end
+
+local function GetClosestPlayerServerId(range)
+        local playerId, distance = QBCore.Functions.GetClosestPlayer()
+        if playerId ~= -1 and (not range or distance <= range) then
+                return GetPlayerServerId(playerId), distance
+        end
+        return nil, distance
+end
 
 -- Car Interaction Menu:
 function CarInteractionMenu()
-	local elements = {
-		{ label = Lang['keys_mangement_label'], value = 'keys_management' }
-	}
+        CloseCurrentContext()
+        local vehicle = nil
+        if IsPedInAnyVehicle(player, false) then
+                vehicle = GetVehiclePedIsIn(player, false)
+        else
+                vehicle = T1GER_GetClosestVehicle(GetEntityCoords(player))
+        end
 
-	local vehicle = nil
-	if IsPedInAnyVehicle(player, false) then
-		vehicle = GetVehiclePedIsIn(player, false)
-	else
-		--vehicle = GetClosestVehicle(coords.x, coords.y, coords.z, 6.0, 0, 71)
-		vehicle = T1GER_GetClosestVehicle(GetEntityCoords(player))
-	end
+        local options = {
+                {
+                        title = Lang['keys_mangement_label'],
+                        description = '',
+                        onSelect = function()
+                                KeysManagement()
+                        end
+                }
+        }
 
-	if vehicle ~= nil and DoesEntityExist(vehicle) then
-		table.insert(elements, {label = Lang['veh_windows_label'], value = 'veh_windows'})
-		table.insert(elements, {label = Lang['veh_door_label'], value = 'veh_doors'})
-		table.insert(elements, {label = Lang['veh_engine_label'], value = 'veh_engine'})
-		table.insert(elements, {label = Lang['veh_neon_label'], value = 'veh_neon'})
-	end
+        if vehicle ~= nil and DoesEntityExist(vehicle) then
+                local vehOptions = {
+                        {
+                                title = Lang['veh_windows_label'],
+                                onSelect = function()
+                                        ShowVehicleWindowsContext(vehicle)
+                                end
+                        },
+                        {
+                                title = Lang['veh_door_label'],
+                                onSelect = function()
+                                        ShowVehicleDoorsContext(vehicle)
+                                end
+                        },
+                        {
+                                title = Lang['veh_engine_label'],
+                                onSelect = function()
+                                        ToggleVehicleEngine()
+                                end
+                        },
+                        {
+                                title = Lang['veh_neon_label'],
+                                onSelect = function()
+                                        ToggleVehicleNeons(vehicle)
+                                end
+                        }
+                }
+                for i = 1, #vehOptions do
+                        options[#options + 1] = vehOptions[i]
+                end
+        end
 
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'car_interaction_menu',
-		{
-			title    = Lang['car_interaction_title'],
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
+        lib.registerContext({
+                id = 't1ger_car_interaction',
+                title = Lang['car_interaction_title'],
+                options = options
+        })
 
-		T1GER_GetControlOfEntity(vehicle)
+        currentContext = 't1ger_car_interaction'
+        lib.showContext(currentContext)
+end
 
-		if data.current.value == 'keys_management' then
-			KeysManagement()
-		end
-		if data.current.value == 'veh_windows' then
-			local elements2 = {}
-			local texts = {[0] = Lang['window_front_l'], [1] = Lang['window_front_r'], [2] = Lang['window_rear_l'], [3] = Lang['window_rear_r'],}
-			for i = 0, 3, 1 do
-				table.insert(elements2, {label = texts[i], index = i})
-			end
-			ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'windows_options', {
-				title    = Lang['windows_menu_title'],
-				align    = 'center',
-				elements = elements2
-			},
-			function(data2, menu2)
-				if window_rolled then
-					window_rolled = false
-					RollUpWindow(vehicle, data2.current.index)
-				else
-					window_rolled = true
-					RollDownWindow(vehicle, data2.current.index)
-				end
-			end, function(data2, menu2)
-				menu2.close()
-			end)
-		end
-		if data.current.value == 'veh_doors' then
-			local elements2 = {}
-			local texts = {[0] = Lang['door_front_l'], [1] = Lang['door_front_r'], [2] = Lang['door_rear_l'], [3] = Lang['door_rear_r'], [4] = Lang['door_hood'], [5] = Lang['door_trunk']}
-			for i = 0, GetNumberOfVehicleDoors(vehicle), 1 do
-				if GetIsDoorValid(vehicle, i) then
-					table.insert(elements2, {label = texts[i], index = i})
-				end
-			end
-			ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'windows_options', {
-				title    = Lang['doors_menu_title'],
-				align    = 'center',
-				elements = elements2
-			},
-			function(data2, menu2)
-				if GetVehicleDoorAngleRatio(vehicle, data2.current.index) > 0.0 then
-					SetVehicleDoorShut(vehicle, data2.current.index, false)
-				else
-					SetVehicleDoorOpen(vehicle, data2.current.index, false, false)
-				end
-			end, function(data2, menu2)
-				menu2.close()
-			end)
-		end
-		if data.current.value == 'veh_engine' then
-			ToggleVehicleEngine()
-		end
-		if data.current.value == 'veh_neon' then
-			if DecorGetBool(vehicle, engine_decor) or GetIsVehicleEngineRunning(vehicle) then
-				for i = 0, 3, 1 do 
-					SetVehicleNeonLightEnabled(vehicle, i, (not IsVehicleNeonLightEnabled(vehicle, i)))
-				end
-			else
-				TriggerEvent('t1ger_keys:notify', Lang['engine_not_running'])
-			end
-		end
-	end, function(data, menu)
-		menu.close()
-	end, function(data, menu)
-		menu.refresh()
-	end)
+function ShowVehicleWindowsContext(vehicle)
+        if vehicle == nil or not DoesEntityExist(vehicle) then return end
+        T1GER_GetControlOfEntity(vehicle)
+        local texts = {
+                [0] = Lang['window_front_l'],
+                [1] = Lang['window_front_r'],
+                [2] = Lang['window_rear_l'],
+                [3] = Lang['window_rear_r']
+        }
+        local options = {}
+        for i = 0, 3 do
+                local index = i
+                options[#options + 1] = {
+                        title = texts[i],
+                        onSelect = function()
+                                if window_rolled then
+                                        window_rolled = false
+                                        RollUpWindow(vehicle, index)
+                                else
+                                        window_rolled = true
+                                        RollDownWindow(vehicle, index)
+                                end
+                        end
+                }
+        end
+
+        lib.registerContext({
+                id = 't1ger_vehicle_windows',
+                title = Lang['windows_menu_title'],
+                menu = 't1ger_car_interaction',
+                options = options
+        })
+
+        currentContext = 't1ger_vehicle_windows'
+        lib.showContext(currentContext)
+end
+
+function ShowVehicleDoorsContext(vehicle)
+        if vehicle == nil or not DoesEntityExist(vehicle) then return end
+        T1GER_GetControlOfEntity(vehicle)
+        local texts = {
+                [0] = Lang['door_front_l'],
+                [1] = Lang['door_front_r'],
+                [2] = Lang['door_rear_l'],
+                [3] = Lang['door_rear_r'],
+                [4] = Lang['door_hood'],
+                [5] = Lang['door_trunk']
+        }
+        local options = {}
+        for i = 0, GetNumberOfVehicleDoors(vehicle) do
+                if GetIsDoorValid(vehicle, i) then
+                        local index = i
+                        options[#options + 1] = {
+                                title = texts[i],
+                                onSelect = function()
+                                        if GetVehicleDoorAngleRatio(vehicle, index) > 0.0 then
+                                                SetVehicleDoorShut(vehicle, index, false)
+                                        else
+                                                SetVehicleDoorOpen(vehicle, index, false, false)
+                                        end
+                                end
+                        }
+                end
+        end
+
+        lib.registerContext({
+                id = 't1ger_vehicle_doors',
+                title = Lang['doors_menu_title'],
+                menu = 't1ger_car_interaction',
+                options = options
+        })
+
+        currentContext = 't1ger_vehicle_doors'
+        lib.showContext(currentContext)
+end
+
+function ToggleVehicleNeons(vehicle)
+        if vehicle == nil or not DoesEntityExist(vehicle) then return end
+        if DecorGetBool(vehicle, engine_decor) or GetIsVehicleEngineRunning(vehicle) then
+                for i = 0, 3 do
+                        SetVehicleNeonLightEnabled(vehicle, i, not IsVehicleNeonLightEnabled(vehicle, i))
+                end
+        else
+                TriggerEvent('t1ger_keys:notify', Lang['engine_not_running'])
+        end
 end
 
 -- Mange Keys:
 function KeysManagement()
-	local elements, fetched = {}, false
-	ESX.TriggerServerCallback('t1ger_keys:fetchOwnedVehicles', function(results) 
-		if next(results) then
-			for k,v in pairs(results) do
-				if v.t1ger_keys then
-					local props = json.decode(v.vehicle)
-					local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
-					table.insert(elements, {label = veh_name..' ['..v.plate..']', name = veh_name, value = v, type = 'owned'})
-				end
-			end
-		end
-		fetched = true 
-	end)
-	while not fetched do Wait(5) end
-	for k,v in pairs(car_keys) do
-		if v.type ~= nil then 
-			table.insert(elements, {label = v.name..' ['..v.plate..'] ['..string.upper(v.type)..']', name = v.name, value = v, type = v.type})
-		end
-	end
-	if next(elements) == nil then
-		return TriggerEvent('t1ger_keys:notify', Lang['no_registerd_keys'])
-	else
-		ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'veh_key_management',
-			{
-				title    = Lang['your_current_keys'],
-				align    = 'center',
-				elements = elements
-			},
-		function(data, menu)
-			--menu.close()
-			local give, remove, delete = false, false, false
-			local closestPlayer, distance = ESX.Game.GetClosestPlayer()
-			if data.current.type == 'owned' then
-				if distance ~= -1 and distance <= 2.0 then
-					give = true; remove = true;
-				else
-					return TriggerEvent('t1ger_keys:notify', Lang['no_players_nearby'])
-				end
-			else
-				if data.current.type == 'copy' then
-					delete = true
-				else  
-					delete = true
-					if distance ~= -1 and distance <= 2.0 then give = true end
-				end
-			end
-			local elements2 = {}
-			if give then table.insert(elements2, {label = Lang['give_key_menu'], value = 'give_key'}) end
-			if remove then table.insert(elements2, {label = Lang['remove_key_menu'], value = 'remove_key'}) end
-			if delete then table.insert(elements2, {label = Lang['delete_key_menu'], value = 'delete_key'}) end
-			ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'keys_actions',
-				{
-					title = Lang['keys_actions_title']:format(data.current.value.plate),
-					align = 'center',
-					elements = elements2,
-				},
-			function(data2, menu2)
-				menu2.close()
-				menu.close()
-				if data2.current.value == 'give_key' then
-					GiveCopyKeys(data.current.value.plate, data.current.name, GetPlayerServerId(closestPlayer))
-				elseif data2.current.value == 'remove_key' then 
-					TriggerServerEvent('t1ger_keys:removeCarKeys', GetPlayerServerId(closestPlayer), data.current.value.plate, data.current.name)
-				elseif data2.current.value == 'delete_key' then 
-					TriggerServerEvent('t1ger_keys:deleteCarKeys', data.current.value.plate, data.current.name)
-				end
-				KeysManagement()
-			end, function(data2, menu2)
-				menu2.close()
-			end)
+        CloseCurrentContext()
+        local entries = {}
+        local results = lib.callback.await('t1ger_keys:fetchOwnedVehicles', false) or {}
+        if next(results) then
+                for _, v in pairs(results) do
+                        if v.t1ger_keys then
+                                local props = json.decode(v.vehicle)
+                                local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
+                                entries[#entries + 1] = {
+                                        label = veh_name..' ['..v.plate..']',
+                                        name = veh_name,
+                                        value = v,
+                                        type = 'owned'
+                                }
+                        end
+                end
+        end
 
-		end, function(data, menu)
-			menu.close()
-		end, function(data, menu)
-			menu.refresh()
-		end)
-	end
+        for _, v in pairs(car_keys) do
+                if v.type ~= nil then
+                        entries[#entries + 1] = {
+                                label = v.name..' ['..v.plate..'] ['..string.upper(v.type)..']',
+                                name = v.name,
+                                value = v,
+                                type = v.type
+                        }
+                end
+        end
+
+        if next(entries) == nil then
+                return TriggerEvent('t1ger_keys:notify', Lang['no_registerd_keys'])
+        end
+
+        local options = {}
+        for _, entry in ipairs(entries) do
+                options[#options + 1] = {
+                        title = entry.label,
+                        onSelect = function()
+                                OpenKeyActions(entry)
+                        end
+                }
+        end
+
+        lib.registerContext({
+                id = 't1ger_keys_management',
+                title = Lang['your_current_keys'],
+                options = options
+        })
+
+        currentContext = 't1ger_keys_management'
+        lib.showContext(currentContext)
+end
+
+function OpenKeyActions(entry)
+        local give, remove, delete = false, false, false
+        local targetServerId, distance = GetClosestPlayerServerId(2.0)
+
+        if entry.type == 'owned' then
+                if targetServerId then
+                        give = true
+                        remove = true
+                else
+                        TriggerEvent('t1ger_keys:notify', Lang['no_players_nearby'])
+                        return
+                end
+        else
+                if entry.type == 'copy' then
+                        delete = true
+                else
+                        delete = true
+                        if targetServerId then
+                                give = true
+                        end
+                end
+        end
+
+        local options = {}
+        if give then
+                options[#options + 1] = {
+                        title = Lang['give_key_menu'],
+                        onSelect = function()
+                                CloseCurrentContext()
+                                GiveCopyKeys(entry.value.plate, entry.name, targetServerId)
+                                KeysManagement()
+                        end
+                }
+        end
+        if remove then
+                options[#options + 1] = {
+                        title = Lang['remove_key_menu'],
+                        onSelect = function()
+                                CloseCurrentContext()
+                                TriggerServerEvent('t1ger_keys:removeCarKeys', targetServerId, entry.value.plate, entry.name)
+                                KeysManagement()
+                        end
+                }
+        end
+        if delete then
+                options[#options + 1] = {
+                        title = Lang['delete_key_menu'],
+                        onSelect = function()
+                                CloseCurrentContext()
+                                TriggerServerEvent('t1ger_keys:deleteCarKeys', entry.value.plate, entry.name)
+                                KeysManagement()
+                        end
+                }
+        end
+
+        if #options == 0 then
+                TriggerEvent('t1ger_keys:notify', Lang['no_available_actions'])
+                return
+        end
+
+        lib.registerContext({
+                id = 't1ger_keys_actions',
+                title = Lang['keys_actions_title']:format(entry.value.plate),
+                menu = 't1ger_keys_management',
+                options = options
+        })
+
+        currentContext = 't1ger_keys_actions'
+        lib.showContext(currentContext)
 end
 
 
@@ -298,7 +459,7 @@ function ToggleVehicleLock()
 	end
 	if DoesEntityExist(vehicle) then
 		local plate = tostring(GetVehicleNumberPlateText(vehicle))
-		local props = ESX.Game.GetVehicleProperties(vehicle)
+		local props = QBCore.Functions.GetVehicleProperties(vehicle)
 		local canToggleLock = false
 		if HasOwnedVehicleKey(plate) then
 			canToggleLock = true
@@ -366,15 +527,8 @@ end
 
 -- Check if has owned vehicle key:
 function HasOwnedVehicleKey(plate)
-	local has_keys, loaded = false, false
-	ESX.TriggerServerCallback('t1ger_keys:fetchVehicleKey', function(state)
-		if state ~= nil and state then 
-			has_keys = state
-		end
-		loaded = true
-	end, plate)
-	while not loaded do Wait(10) end
-	return has_keys
+        local state = lib.callback.await('t1ger_keys:fetchVehicleKey', false, plate)
+        return state ~= nil and state == true
 end
 
 -- Check if has key from car_keys table:
@@ -416,13 +570,12 @@ end
 
 -- Thread to lock NPC Vehicles:
 Citizen.CreateThread(function()
-	while true do
-		Citizen.Wait(10)
-		local sleep = true 
-		if DoesEntityExist(GetVehiclePedIsTryingToEnter(player)) then
-			sleep = false
-			local vehicle = GetVehiclePedIsTryingToEnter(player)
-			T1GER_GetControlOfEntity(vehicle)
+        while true do
+                local wait = 500
+                if DoesEntityExist(GetVehiclePedIsTryingToEnter(player)) then
+                        wait = 0
+                        local vehicle = GetVehiclePedIsTryingToEnter(player)
+                        T1GER_GetControlOfEntity(vehicle)
 			-- Lock NPC vehicles:
 			local NPC = GetPedInVehicleSeat(vehicle, -1)
 			if not DecorExistOn(vehicle, lock_decor) then
@@ -449,10 +602,10 @@ Citizen.CreateThread(function()
 					ClearPedTasks(player)
 				end
 			end
-			SetVehicleDoorsLocked(vehicle, DecorGetInt(vehicle, lock_decor))
-		end
-		if sleep then Citizen.Wait(500) end
-	end
+                        SetVehicleDoorsLocked(vehicle, DecorGetInt(vehicle, lock_decor))
+                end
+                Citizen.Wait(wait)
+        end
 end)
 
 -- Thread to steal NPC vehicles:
@@ -538,65 +691,62 @@ function LockpickVehicle()
 	if lockpicking then
 		return TriggerEvent('t1ger_keys:notify', Lang['already_lockpicking'])
 	end
-	local vehicle = ESX.Game.GetVehicleInDirection()
+	local vehicle = T1GER_GetVehicleInDirection()
 	local veh_coords = GetEntityCoords(vehicle)
 	if DoesEntityExist(vehicle) then
 		if GetDistanceBetweenCoords(coords, veh_coords.x, veh_coords.y, veh_coords.z, true) < 2.0 then
 			if DecorExistOn(vehicle, lock_decor) then 
 				if DecorGetInt(vehicle, lock_decor) == 2 or DecorGetInt(vehicle, lock_decor) == 10 then
-					local plate, alarm, identifier, got_alarm = tostring(GetVehicleNumberPlateText(vehicle)), false, nil, false
-					lockpicking = true
-					ESX.TriggerServerCallback('t1ger_keys:getVehicleAlarm', function(state, src_identifier)
-						if state ~= nil then
-							alarm = state
-							identifier = src_identifier
-							got_alarm = true
-						end
-						while not got_alarm do Citizen.Wait(10) end
-						if Config.Lockpick.Remove then
-							TriggerServerEvent('t1ger_keys:removeLockpick')
-						end
-						if Config.Lockpick.Report then 
-							ReportPlayer(vehicle, 'lockpick')
-						end
-						T1GER_LoadAnim(Config.Lockpick.Anim.Dict)
-						SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
-						FreezeEntityPosition(player, true)
-						if Config.ProgressBars then
-							exports['progressBars']:startUI((Config.Lockpick.Duration), Config.Lockpick.Text)
-						end
-						if Config.Lockpick.Alarm.Enable then
-							SetVehicleAlarm(vehicle, true)
-							SetVehicleAlarmTimeLeft(vehicle, (Config.Lockpick.Alarm.Time))
-							StartVehicleAlarm(vehicle)
-						end
-						-- Get success state:
-						local success = false
-						math.randomseed(GetGameTimer())
-						local chance = math.random(100)
-						if alarm then
-							if Config.Lockpick.Alarm.Report then ReportToVehicleOwner(plate, identifier) end
-							if chance <= Config.Lockpick.Alarm.Chance then success = true end
-						else
-							if chance <= Config.Lockpick.Chance then success = true end
-						end
-						Citizen.Wait(Config.Lockpick.Duration)
-						ClearPedTasks(player)
-						FreezeEntityPosition(player, false)
-						lockpicking = false
-						if success then
-							SetVehicleLocked(vehicle, Config.Lock.UnlockInt)
-							SetVehicleHotwire(vehicle, Config.Lockpick.SetHotwire)
-							SetVehicleNeedsToBeHotwired(vehicle, false)
-							SetVehicleCanSearch(vehicle, Config.Lockpick.AllowSearch)
-							TriggerEvent('t1ger_keys:notify', Lang['veh_lockpicked_success'])
-							if Config.Lockpick.SetHotwire then
-								TriggerEvent('t1ger_keys:notify', Lang['hotwire_the_vehicle'])
-							end
-						else
-							TriggerEvent('t1ger_keys:notify', Lang['veh_lockpicked_fail'])
-						end
-					end, plate)
+                                        local plate, alarm, identifier = tostring(GetVehicleNumberPlateText(vehicle)), false, nil
+                                        lockpicking = true
+                                        local alarmData = lib.callback.await('t1ger_keys:getVehicleAlarm', false, plate)
+                                        if alarmData then
+                                                alarm = alarmData.alarm
+                                                identifier = alarmData.owner
+                                        end
+                                        if Config.Lockpick.Remove then
+                                                TriggerServerEvent('t1ger_keys:removeLockpick')
+                                        end
+                                        if Config.Lockpick.Report then
+                                                ReportPlayer(vehicle, 'lockpick')
+                                        end
+                                        T1GER_LoadAnim(Config.Lockpick.Anim.Dict)
+                                        SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"),true)
+                                        FreezeEntityPosition(player, true)
+                                        if Config.ProgressBars then
+                                                exports['progressBars']:startUI((Config.Lockpick.Duration), Config.Lockpick.Text)
+                                        end
+                                        if Config.Lockpick.Alarm.Enable then
+                                                SetVehicleAlarm(vehicle, true)
+                                                SetVehicleAlarmTimeLeft(vehicle, (Config.Lockpick.Alarm.Time))
+                                                StartVehicleAlarm(vehicle)
+                                        end
+                                        -- Get success state:
+                                        local success = false
+                                        math.randomseed(GetGameTimer())
+                                        local chance = math.random(100)
+                                        if alarm then
+                                                if Config.Lockpick.Alarm.Report then ReportToVehicleOwner(plate, identifier) end
+                                                if chance <= Config.Lockpick.Alarm.Chance then success = true end
+                                        else
+                                                if chance <= Config.Lockpick.Chance then success = true end
+                                        end
+                                        Citizen.Wait(Config.Lockpick.Duration)
+                                        ClearPedTasks(player)
+                                        FreezeEntityPosition(player, false)
+                                        lockpicking = false
+                                        if success then
+                                                SetVehicleLocked(vehicle, Config.Lock.UnlockInt)
+                                                SetVehicleHotwire(vehicle, Config.Lockpick.SetHotwire)
+                                                SetVehicleNeedsToBeHotwired(vehicle, false)
+                                                SetVehicleCanSearch(vehicle, Config.Lockpick.AllowSearch)
+                                                TriggerEvent('t1ger_keys:notify', Lang['veh_lockpicked_success'])
+                                                if Config.Lockpick.SetHotwire then
+                                                        TriggerEvent('t1ger_keys:notify', Lang['hotwire_the_vehicle'])
+                                                end
+                                        else
+                                                TriggerEvent('t1ger_keys:notify', Lang['veh_lockpicked_fail'])
+                                        end
 				else
 					return TriggerEvent('t1ger_keys:notify', Lang['deny_lockpick_unlocked'])
 				end
@@ -863,194 +1013,157 @@ end
 
 -- Function to report vehicle theft to owner:
 function ReportToVehicleOwner(plate, identifier)
-	TriggerEvent('t1ger_keys:player_notify', plate, identifier)
+        TriggerEvent('t1ger_keys:player_notify', plate, identifier)
 end
 
 local blips = {}
-local in_menu = false
-
-Citizen.CreateThread(function()
-	while true do
-        Citizen.Wait(1)
-		local sleep = true
-		local closest, dist = GetClosestShop()
-
-		if closest ~= nil then
-			if not in_menu then 
-				sleep = false
-				if closest.marker.enable and dist > 1.5 then
-					local mk = closest.marker
-					DrawMarker(mk.type, closest.pos.x, closest.pos.y, closest.pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2, false, false, false, false)
-				end
-				if dist < 1.5 then 
-					T1GER_DrawTxt(closest.pos.x, closest.pos.y, closest.pos.z, closest.text)
-					if IsControlJustPressed(0, closest.key) then
-						if closest == Config.LockSmith then 
-							LocksmithMenu(Config.LockSmith)
-						elseif closest == Config.AlarmShop then
-							AlarmShopMenu(Config.AlarmShop)
-						end
-					end
-				end
-			end
-			if dist > 1.5 and in_menu then
-				ESX.UI.Menu.CloseAll()
-				in_menu = false
-			end
-		end
-
-		if sleep then Citizen.Wait(1500) end
-	end
-end)
 
 -- Lock Smith Menu:
 function LocksmithMenu(val)
-	local elements = {}
-	ESX.TriggerServerCallback('t1ger_keys:fetchOwnedVehicles', function(results) 
-		if next(results) then
-			for k,v in pairs(results) do
-				if not v.t1ger_keys then
-					local props = json.decode(v.vehicle)
-					local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
-					table.insert(elements, {label = veh_name..' ['..v.plate..']', name = veh_name, value = v})
-				end
-			end
-			if next(elements) == nil then
-				return TriggerEvent('t1ger_keys:notify', Lang['all_veh_has_keys'])
-			else
-				in_menu = true
-				ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'locksmith_main',
-					{
-						title    = Lang['shop_main_title'],
-						align    = 'center',
-						elements = elements
-					},
-				function(data, menu)
-					--menu.close()
-					ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'register_key',
-						{
-							title = Lang['reg_key_title']:format(val.price),
-							align = 'center',
-							elements = {
-								{label = Lang['button_no'], value = 'no'},
-								{label = Lang['button_yes'], value = 'yes'}
-							},
-						},
-					function(data2, menu2)
-						if data2.current.value == 'yes' then
-							ESX.UI.Menu.CloseAll()
-							TriggerServerEvent('t1ger_keys:registerKey', data.current.value.plate, true)
-							TriggerEvent('t1ger_keys:notify', Lang['key_reg_accepted'])
-							in_menu = false
-						end
-						menu2.close()
-					end, function(data2, menu2)
-						menu2.close()
-					end)
-				end, function(data, menu)
-					menu.close()
-					ESX.UI.Menu.CloseAll()
-					in_menu = false
-				end)
-			end
-		else
-			return TriggerEvent('t1ger_keys:notify', Lang['no_owned_vehicles'])
-		end
-	end)
+        CloseCurrentContext()
+        local results = lib.callback.await('t1ger_keys:fetchOwnedVehicles', false) or {}
+        local options = {}
+
+        if next(results) then
+                for _, v in pairs(results) do
+                        if not v.t1ger_keys then
+                                local props = json.decode(v.vehicle)
+                                local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
+                                local plate = v.plate
+                                options[#options + 1] = {
+                                        title = veh_name..' ['..plate..']',
+                                        onSelect = function()
+                                                local response = lib.alertDialog({
+                                                        header = Lang['reg_key_title']:format(val.price),
+                                                        content = Lang['confirm_register_key'],
+                                                        centered = true,
+                                                        cancel = true
+                                                })
+                                                if response == 'confirm' then
+                                                        CloseCurrentContext()
+                                                        TriggerServerEvent('t1ger_keys:registerKey', plate, true)
+                                                        TriggerEvent('t1ger_keys:notify', Lang['key_reg_accepted'])
+                                                end
+                                        end
+                                }
+                        end
+                end
+        end
+
+        if #options == 0 then
+                if next(results) then
+                        TriggerEvent('t1ger_keys:notify', Lang['all_veh_has_keys'])
+                else
+                        TriggerEvent('t1ger_keys:notify', Lang['no_owned_vehicles'])
+                end
+                return
+        end
+
+        lib.registerContext({
+                id = 't1ger_locksmith',
+                title = Lang['shop_main_title'],
+                options = options
+        })
+
+        currentContext = 't1ger_locksmith'
+        lib.showContext(currentContext)
 end
 
 -- Alarm Shop Menu:
 function AlarmShopMenu(val)
-	local elements = {}
-	ESX.TriggerServerCallback('t1ger_keys:fetchOwnedVehicles', function(results) 
-		if next(results) then
-			for k,v in pairs(results) do
-				if not v.t1ger_alarm then
-					local props = json.decode(v.vehicle)
-					local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
-					table.insert(elements, {label = veh_name..' ['..v.plate..']', name = veh_name, value = v, props = props})
-				end
-			end
-			if next(elements) == nil then
-				return TriggerEvent('t1ger_keys:notify', Lang['all_veh_have_alarm'])
-			else
-				in_menu = true
-				ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'alarmshop_main',
-					{
-						title    = Lang['shop_main_title'],
-						align    = 'center',
-						elements = elements
-					},
-				function(data, menu)
-					--menu.close()
-					local fetched, model, price = false, nil, 0
-					ESX.TriggerServerCallback('t1ger_keys:getVehiclePrice', function(result) 
-						if result ~= nil then
-							model = result.model
-							price = result.price
-						end
-						fetched = true
-					end, GetDisplayNameFromVehicleModel(data.current.props.model):lower())
-					while not fetched do Citizen.Wait(100) end
-					if price <= 0 then
-						print('Vehicle Price Error ['..data.current.value.plate..']\ngameName property in vehicles.meta for this vehicle does not match spawn code name from database.\nPlease let developers know - take screenshot of this!')
-						return TriggerEvent('t1ger_keys:notify', Lang['check_f8_console'])
-					else
-						price = math.floor((val.price/100) * price)
-					end
-					ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'register_alarm',
-						{
-							title = Lang['reg_alarm_title']:format(price),
-							align = 'center',
-							elements = {
-								{label = Lang['button_no'], value = 'no'},
-								{label = Lang['button_yes'], value = 'yes'}
-							},
-						},
-					function(data2, menu2)
-						if data2.current.value == 'yes' then
-							ESX.UI.Menu.CloseAll()
-							TriggerServerEvent('t1ger_keys:registerAlarm', data.current.value.plate, true, price)
-							TriggerEvent('t1ger_keys:notify', Lang['alarm_aquired'])
-							in_menu = false
-						end
-						menu2.close()
-					end, function(data2, menu2)
-						menu2.close()
-					end)
-				end, function(data, menu)
-					menu.close()
-					ESX.UI.Menu.CloseAll()
-					in_menu = false
-				end)
-			end
-		else
-			return TriggerEvent('t1ger_keys:notify', Lang['no_owned_vehicles'])
-		end
-	end)
+        CloseCurrentContext()
+        local results = lib.callback.await('t1ger_keys:fetchOwnedVehicles', false) or {}
+        local options = {}
+
+        if next(results) then
+                for _, v in pairs(results) do
+                        if not v.t1ger_alarm then
+                                local props = json.decode(v.vehicle)
+                                local veh_name = GetLabelText(GetDisplayNameFromVehicleModel(props.model))
+                                local plate = v.plate
+                                options[#options + 1] = {
+                                        title = veh_name..' ['..plate..']',
+                                        onSelect = function()
+                                                local vehicleName = GetDisplayNameFromVehicleModel(props.model):lower()
+                                                local priceInfo = lib.callback.await('t1ger_keys:getVehiclePrice', false, vehicleName)
+                                                local price = priceInfo and priceInfo.price or 0
+                                                if price <= 0 then
+                                                        print('Vehicle Price Error ['..plate..']\ngameName property in vehicles.meta for this vehicle does not match spawn code name from database.\nPlease let developers know - take screenshot of this!')
+                                                        TriggerEvent('t1ger_keys:notify', Lang['check_f8_console'])
+                                                        return
+                                                end
+                                                price = math.floor((val.price/100) * price)
+                                                local response = lib.alertDialog({
+                                                        header = Lang['reg_alarm_title']:format(price),
+                                                        content = Lang['confirm_register_alarm'],
+                                                        centered = true,
+                                                        cancel = true
+                                                })
+                                                if response == 'confirm' then
+                                                        CloseCurrentContext()
+                                                        TriggerServerEvent('t1ger_keys:registerAlarm', plate, true, price)
+                                                        TriggerEvent('t1ger_keys:notify', Lang['alarm_aquired'])
+                                                end
+                                        end
+                                }
+                        end
+                end
+        end
+
+        if #options == 0 then
+                if next(results) then
+                        TriggerEvent('t1ger_keys:notify', Lang['all_veh_have_alarm'])
+                else
+                        TriggerEvent('t1ger_keys:notify', Lang['no_owned_vehicles'])
+                end
+                return
+        end
+
+        lib.registerContext({
+                id = 't1ger_alarmshop',
+                title = Lang['shop_main_title'],
+                options = options
+        })
+
+        currentContext = 't1ger_alarmshop'
+        lib.showContext(currentContext)
 end
 
--- function to get closest shop:
-function GetClosestShop()
-	local value = nil
-	if #(coords - Config.LockSmith.pos) < Config.LockSmith.marker.drawDist then
-		value = Config.LockSmith
-	elseif #(coords - Config.AlarmShop.pos) < Config.AlarmShop.marker.drawDist then
-		value = Config.AlarmShop
-	else
-		value = nil
-	end
-	local dist = 0; if value ~= nil then dist = #(coords - value.pos) end 
-	return value, dist
-end
+Citizen.CreateThread(function()
+        if not lib or not lib.points then return end
+        shopPoints.locksmith = CreateShopPoint(Config.LockSmith, LocksmithMenu)
+        shopPoints.alarmshop = CreateShopPoint(Config.AlarmShop, AlarmShopMenu)
+end)
+
+AddEventHandler('onResourceStop', function(resource)
+        if resource ~= GetCurrentResourceName() then return end
+        HideShopTextUI()
+        for _, point in pairs(shopPoints) do
+                if point and point.remove then
+                        point:remove()
+                end
+        end
+end)
 
 -- Create Blips:
 Citizen.CreateThread(function()
-	blips.locksmith = T1GER_CreateBlip(Config.LockSmith.pos, Config.LockSmith.blip)
-	blips.alarmshop = T1GER_CreateBlip(Config.AlarmShop.pos, Config.AlarmShop.blip)
+        blips.locksmith = T1GER_CreateBlip(Config.LockSmith.pos, Config.LockSmith.blip)
+        blips.alarmshop = T1GER_CreateBlip(Config.AlarmShop.pos, Config.AlarmShop.blip)
 end)
 
 -- Function to get closest vehicle:
+function T1GER_GetVehicleInDirection()
+        local ped = PlayerPedId()
+        local from = GetEntityCoords(ped)
+        local to = GetOffsetFromEntityInWorldCoords(ped, 0.0, 5.0, 0.0)
+        local rayHandle = StartShapeTestRay(from.x, from.y, from.z, to.x, to.y, to.z, 10, ped, 0)
+        local _, hit, endCoords, surfaceNormal, entityHit = GetShapeTestResult(rayHandle)
+        if hit == 1 and DoesEntityExist(entityHit) then
+                return entityHit
+        end
+        return 0
+end
+
 function T1GER_GetClosestVehicle(pos)
     local closestVeh = StartShapeTestCapsule(pos.x, pos.y, pos.z, pos.x, pos.y, pos.z, 6.0, 10, player, 7)
     local a, b, c, d, entityHit = GetShapeTestResult(closestVeh)

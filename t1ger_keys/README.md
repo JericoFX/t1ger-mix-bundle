@@ -7,7 +7,7 @@ https://youtu.be/FvTIlO4SBBg
 https://forum.cfx.re/t/esx-t1ger-keys-with-npc-vehicles-lock-locking-unlocking-vehicles-lockpicking-hotwire-search-and-more/4766312
 
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore](https://github.com/qbcore-framework/qb-core)
 
 ## DEPENCENCIES:
 - [ProgressBars (OPTIONAL)](https://gitlab.com/t1ger-scripts/t1ger-requirements/-/tree/main/progressBars)

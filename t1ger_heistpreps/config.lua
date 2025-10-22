@@ -3,12 +3,13 @@
 ------------------------------------- 
 
 Config = {
-    ESX_OBJECT = 'esx:getSharedObject', -- set your shared object event in here
-    ProgressBars = true, -- set to false if you do not use progressBars or using your own
-	T1GER_Keys = true, -- set to false if you do not own t1ger-keys
-	RequestJobCommand = 'prep', -- command to request heist prep jobs/missions.
-	DataCrackMinigame = true, -- set to false if not using this, see readme for link
-	LockpickingMinigame = true, -- set to false if not using this or using other. see readme for link
+    ProgressBars = true, -- uses ox_lib progress bar when enabled
+        T1GER_Keys = true, -- set to false if you do not own t1ger-keys
+        RequestJobCommand = 'prep', -- command to request heist prep jobs/missions.
+        DataCrackMinigame = true, -- set to false if not using this, see readme for link
+        LockpickingMinigame = true, -- set to false if not using this or using other. see readme for link
+
+        JobTimeout = 15, -- minutes before a stalled prep automatically resets
 
 	Blips = {
 		['hacking'] = {enable = true, sprite = 363, display = 4, scale = 0.65, color = 5, name = "Hacking Heist Preparation"},

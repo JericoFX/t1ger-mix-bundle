@@ -24,26 +24,26 @@ https://forum.cfx.re/t/esx-t1ger-traffic-policer-anpr-traffic-offences-breathaly
 https://discord.gg/FdHkq5q
 
 ### Breathalyzer Test & BAC
-- Go to Config.Breathalyzer and configure the settings to your likeing. I've done major testings etc., and I finde those values best & most suitable.
+- Go to Config.Breathalyzer and configure the settings to your liking. I've done major testings etc., and I find those values best & most suitable.
 - For all your alcohol items, which should have the effect, add this event in the usable item function: `TriggerClientEvent('t1ger_trafficpolicer:useAlcohol', xPlayer.source, 14)`
 - The number 14 is the weight of alcohol in grams for that specific item. Keep these values between 10-25, the higher u go, the higher the BAC value, thus the longer it takes to get sober.
 - Police can request a breathalyzer test and target player has to either accept/deny the test. This returns the players BAC value. In your server rules, law or whatever it is you can add a legal limit etc., which police officers can compare with.
 
 ### Drug Swab Test & BDC
-- Go to Config.DrugSwab and configure the settings to your likeing. 
+- Go to Config.DrugSwab and configure the settings to your liking.
 - For all your drug items, which should have the effect, add this event in the usable item function: `TriggerClientEvent('t1ger_trafficpolicer:useDrug', xPlayer.source, 'Cocaine', 10)`
 - The first arg is the label for the drug, make sure this label is also added inside Config.DrugSwab.labels array.
 - The next arg is duration, until player is cleared for that specific drug. Which means, for each Config.DrugSwab.tick, the duration is decreased by 1.
-- Police can request a drug swab test and target player has to either accept/deny the test. This returns the drug and a respective state of POSTIVE/NEGATIVE. Use this in RP however u want to.
+- Police can request a drug swab test and target player has to either accept/deny the test. This returns the drug and a respective state of POSITIVE/NEGATIVE. Use this in RP however u want to.
 
 ### ANPR / ALPR
 - To activate/deactivate ANPR, use Config.ANPR.command.str or Config.ANPR.keybind.key
-- To add a marker for a vehicle, usse /anpr [plate] [stolen/bolo] [true/false]
+- To add a marker for a vehicle, use /anpr [plate] [stolen/bolo] [true/false]
 - Example #1: /anpr "HSG 752" stolen true
 - Example #2: /anpr ASD754SD bolo false
 - Reminder: if u have space chars in your plates, remember to use " before and after the plate.
 - ANPR will automatically deactivate, when a hit is found. Then you can manually activate it again, by using either command/keybind
-- In server/main.lua find the event called `t1ger_trafficpolicer:updateANPR`. In this event u can fetch more data from users table or owned_vehicles table, exampe wanted/warrant state? - and add it into the ANPR table. Just make sure to make the necessary edit client side to. This does require some LUA knowledge, so if your skills are poor, don't even bother. It's not supported by me/staff.
+- In server/main.lua find the event called `t1ger_trafficpolicer:updateANPR`. In this event u can fetch more data from users table or owned_vehicles table, example wanted/warrant state? - and add it into the ANPR table. Just make sure to make the necessary edit client side too. This does require some LUA knowledge, so if your skills are poor, don't even bother. It's not supported by me/staff.
 
 ### Vehicle Names NULL?
 - This is a you problem, kindly install your add-on vehicles properly.
@@ -59,4 +59,4 @@ https://discord.gg/FdHkq5q
 
 ### Barricade System
 - My script supports Marcus' Barricade System [https://modit.store/products/barricade-system]
-- If you own this product, set the configurable option til true, so it will display menu in my traffic policer menu, which will open his menu.
+- If you own this product, set the configurable option to true, so it will display menu in my traffic policer menu, which will open his menu.

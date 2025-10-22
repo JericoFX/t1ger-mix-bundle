@@ -1,9 +1,9 @@
 DROP TABLE IF EXISTS `t1ger_shops`;
 CREATE TABLE `t1ger_shops` (
-	`id` INT(11) PRIMARY KEY,
-	`identifier` VARCHAR(100) NOT NULL,
-	`stock` longtext DEFAULT NULL,
-	`shelves` longtext DEFAULT NULL
+        `id` INT(11) PRIMARY KEY,
+        `citizenid` VARCHAR(50) NOT NULL,
+        `stock` longtext DEFAULT NULL,
+        `shelves` longtext DEFAULT NULL
 );
 
 DROP TABLE IF EXISTS `t1ger_orders`;

@@ -1,49 +1,74 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
-ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports['qb-core']:GetCoreObject()
 PlayerData = {}
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
-	if Config.Debug then
-		Citizen.Wait(2000)
-		TriggerServerEvent('t1ger_shops:debugSV')
-	end
+local function updateOwnedShop()
+        if not PlayerData or not PlayerData.job then
+                TriggerEvent('t1ger_shops:setShopID', 0)
+                return
+        end
+
+        for i = 1, #Config.Shops do
+                local jobName = Config.Society[Config.Shops[i].society].job
+                if jobName and PlayerData.job.name == jobName then
+                        TriggerEvent('t1ger_shops:setShopID', i)
+                        return
+                end
+        end
+
+        TriggerEvent('t1ger_shops:setShopID', 0)
+end
+
+local function refreshPlayerData()
+        PlayerData = QBCore.Functions.GetPlayerData() or {}
+        updateOwnedShop()
+        if Config.Debug then
+                CreateThread(function()
+                        Wait(2000)
+                        TriggerServerEvent('t1ger_shops:debugSV')
+                end)
+        end
+end
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+        refreshPlayerData()
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+        PlayerData = {}
+        TriggerEvent('t1ger_shops:setShopID', 0)
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
-	for i = 1, #Config.Shops do
-		local shopsJob = Config.Society[Config.Shops[i].society].name
-		if PlayerData.job.name == shopsJob then
-			TriggerEvent('t1ger_shops:setShopID', i)
-			break
-		else
-			if i == #Config.Shops then
-				TriggerEvent('t1ger_shops:setShopID', 0)
-				break
-			end
-		end
-	end
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+        PlayerData.job = job
+        updateOwnedShop()
+end)
+
+AddEventHandler('onResourceStart', function(resource)
+        if resource ~= GetCurrentResourceName() then return end
+        if LocalPlayer and LocalPlayer.state['isLoggedIn'] then
+                refreshPlayerData()
+        end
 end)
 
 -- Notification
-RegisterNetEvent('t1ger_shops:notify')
-AddEventHandler('t1ger_shops:notify', function(msg)
-	ESX.ShowNotification(msg)
+RegisterNetEvent('t1ger_shops:notify', function(msg, opts)
+        lib.notify({
+                title = opts and opts.title or 'Shops',
+                description = msg,
+                type = opts and opts.type or 'inform'
+        })
 end)
 
--- Advanced Notification
-RegisterNetEvent('t1ger_shops:notifyAdvanced')
-AddEventHandler('t1ger_shops:notifyAdvanced', function(sender, subject, msg, textureDict, iconType)
-	ESX.ShowAdvancedNotification(sender, subject, msg, textureDict, iconType, false, false, false)
+-- Advanced Notification fallback (maintained for backwards compatibility)
+RegisterNetEvent('t1ger_shops:notifyAdvanced', function(sender, subject, msg)
+        lib.notify({
+                title = subject or sender or 'Shops',
+                description = msg,
+                type = 'inform'
+        })
 end)
 
 -- Draw 3D Text:
@@ -68,23 +93,18 @@ function T1GER_LoadModel(model)
 end
 
 function T1GER_isJob(name)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	if PlayerData.job.name == name then
-		return true
-	end
-	return false
+        if not PlayerData or not PlayerData.job then return false end
+        return PlayerData.job.name == name
 end
 
 function T1GER_GetJob(table)
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	for k,v in pairs(table) do
-		if PlayerData.job.name == v then
-			return true
-		end
-	end
-	return false
+        if not PlayerData or not PlayerData.job then return false end
+        for _, v in pairs(table) do
+                if PlayerData.job.name == v then
+                        return true
+                end
+        end
+        return false
 end
 
 -- Round function

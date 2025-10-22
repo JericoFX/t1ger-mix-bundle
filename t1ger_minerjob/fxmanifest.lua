@@ -3,26 +3,32 @@
 ------------------------------------- 
 
 fx_version 'cerulean'
-games {'gta5'}
-lua54 "yes"
+games { 'gta5' }
+lua54 'yes'
 
 author 'T1GER#9080'
 discord 'https://discord.gg/FdHkq5q'
 description 'T1GER Miner Job'
 version '1.0.0'
 
+shared_script '@ox_lib/init.lua'
+
 client_scripts {
-	'language.lua',
-	'config.lua',
-	'client/main.lua',
-	'client/utils.lua'
+    'language.lua',
+    'config.lua',
+    'client/utils.lua',
+    'client/main.lua'
 }
 
 server_scripts {
-	'@mysql-async/lib/MySQL.lua',
-	'language.lua',
-	'config.lua',
-	'server/main.lua'
+    'language.lua',
+    'config.lua',
+    'server/main.lua'
+}
+
+dependencies {
+    'ox_lib',
+    'qb-core'
 }
 
 escrow_ignore {

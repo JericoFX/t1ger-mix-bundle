@@ -1,78 +1,84 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
-ESX = exports['es_extended']:getSharedObject()
-PlayerData 	= {}
+-------------------------------------
+local QBCore = exports['qb-core']:GetCoreObject()
+PlayerData      = {}
 
 -- Police Notify:
 isCop = false
 local streetName
 local _
 
-Citizen.CreateThread(function()
-	PlayerData = ESX.GetPlayerData()
-	isCop = IsPlayerJobCop()
+CreateThread(function()
+        while not LocalPlayer.state.isLoggedIn do
+                Wait(100)
+        end
+        PlayerData = QBCore.Functions.GetPlayerData()
+        isCop = IsPlayerJobCop()
 end)
 
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(xPlayer)
-	PlayerData = xPlayer
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function(playerData)
+        PlayerData = playerData or QBCore.Functions.GetPlayerData()
+        isCop = IsPlayerJobCop()
 end)
 
-RegisterNetEvent('esx:setJob')
-AddEventHandler('esx:setJob', function(job)
-	PlayerData.job = job
-	isCop = IsPlayerJobCop()
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
+        PlayerData.job = job
+        isCop = IsPlayerJobCop()
 end)
 
--- [[ ESX SHOW ADVANCED NOTIFICATION ]] --
-RegisterNetEvent('t1ger_yachtheist:ShowAdvancedNotifyESX')
-AddEventHandler('t1ger_yachtheist:ShowAdvancedNotifyESX', function(title, subject, msg, icon, iconType)
-	ESX.ShowAdvancedNotification(title, subject, msg, icon, iconType)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
-	
+RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
+        PlayerData = val
+        isCop = IsPlayerJobCop()
 end)
 
--- [[ ESX SHOW NOTIFICATION ]] --
-RegisterNetEvent('t1ger_yachtheist:ShowNotifyESX')
-AddEventHandler('t1ger_yachtheist:ShowNotifyESX', function(msg)
-	ShowNotifyESX(msg)
+RegisterNetEvent('t1ger_yachtheist:client:notify', function(msg, msgType)
+        lib.notify({
+                description = msg,
+                type = msgType or 'inform'
+        })
 end)
 
-function ShowNotifyESX(msg)
-	ESX.ShowNotification(msg)
-	-- If you want to switch ESX.ShowNotification with something else:
-	-- 1) Comment out the function
-	-- 2) add your own
+function ShowNotify(msg, msgType)
+        lib.notify({
+                description = msg,
+                type = msgType or 'inform'
+        })
 end
 
 -- Is Player A cop?
-function IsPlayerJobCop()	
-	if not PlayerData then return false end
-	if not PlayerData.job then return false end
-	for k,v in pairs(Config.PoliceSettings.jobs) do
-		if PlayerData.job.name == v then return true end
-	end
-	return false
+function IsPlayerJobCop()
+        if not PlayerData then return false end
+        if not PlayerData.job then return false end
+        if PlayerData.job.onduty ~= nil and PlayerData.job.onduty == false then return false end
+        for k,v in pairs(Config.PoliceSettings.jobs) do
+                if PlayerData.job.name == v then return true end
+        end
+        return false
 end
 
 RegisterNetEvent('t1ger_yachtheist:PoliceNotifyCL')
 AddEventHandler('t1ger_yachtheist:PoliceNotifyCL', function(alert)
-	if isCop then
-		TriggerEvent('chat:addMessage', { args = {(Lang['dispatch_name']).. alert}})
-	end
+        if isCop then
+                lib.notify({
+                        title = Lang['dispatch_name'],
+                        description = alert,
+                        type = 'warning',
+                        position = 'top-right'
+                })
+        end
 end)
 
 -- Thread for Police Notify
-Citizen.CreateThread(function()
-	while true do
-		Citizen.Wait(3000)
-		local pos = GetEntityCoords(GetPlayerPed(-1), false)
-		streetName,_ = GetStreetNameAtCoord(pos.x, pos.y, pos.z)
-		streetName = GetStreetNameFromHashKey(streetName)
-	end
+CreateThread(function()
+        while true do
+                Wait(2500)
+                if cache.ped then
+                        local pos = GetEntityCoords(cache.ped, false)
+                        streetName,_ = GetStreetNameAtCoord(pos.x, pos.y, pos.z)
+                        streetName = GetStreetNameFromHashKey(streetName)
+                end
+        end
 end)
 
 -- Function for 3D text:
@@ -99,28 +105,28 @@ function round(num, numDecimalPlaces)
 end
 
 function comma_value(n)
-	local left,num,right = string.match(n,'^([^%d]*%d)(%d*)(.-)$')
-	return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
+        local left,num,right = string.match(n,'^([^%d]*%d)(%d*)(.-)$')
+        return left..(num:reverse():gsub('(%d%d%d)','%1,'):reverse())..right
 end
 
 function drawRct(x, y, width, height, r, g, b, a)
-	DrawRect(x + width/2, y + height/2, width, height, r, g, b, a)
+        DrawRect(x + width/2, y + height/2, width, height, r, g, b, a)
 end
 
 -- Load Anim
 function LoadAnim(animDict)
-	RequestAnimDict(animDict)
-	while not HasAnimDictLoaded(animDict) do
-		Citizen.Wait(10)
-	end
+        RequestAnimDict(animDict)
+        while not HasAnimDictLoaded(animDict) do
+                Wait(10)
+        end
 end
 
 -- Load Model
 function LoadModel(model)
-	RequestModel(model)
-	while not HasModelLoaded(model) do
-		Citizen.Wait(10)
-	end
+        RequestModel(model)
+        while not HasModelLoaded(model) do
+                Wait(10)
+        end
 end
 
 -- Instructional Buttons:

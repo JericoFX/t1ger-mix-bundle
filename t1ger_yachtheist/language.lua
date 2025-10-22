@@ -14,6 +14,7 @@ Lang = {
     ['drilling_paused']         = 'You ~y~stopped~s~ drilling.',
     ['you_destroyed_safe']      = 'You ~r~destroyed~s~ the safe!',
     ['safe_item_reward']        = 'You found ~b~%sx~s~ ~y~%s~s~.',
+    ['safe_money_reward']       = 'You received ~g~$%s~s~ from the safe.',
     ['find_vault_room']         = 'Find the room cointaining the vault',
     ['yacht_cooldown']          = 'Yacht has been recently robbed, please wait.',
     ['yacht_activated']         = 'Yacht being robbed already - or police did not secure the vault?',
@@ -22,13 +23,13 @@ Lang = {
     ['not_enough_cops']         = 'Not enough cops online.',
 
     -- Draw Text 3D:
-    ['drill_close_safe']        = '~r~[E]~s~ Drill Safe',
-    ['safe_destroyed']          = 'Safe ~r~[destroyed]~s~',
-    ['safe_drilled']            = 'Safe ~g~[drilled]~s~',
-    ['yacht_heist_interact']    = '~r~[E]~s~ Start Yacht Heist',
-    ['hack_keypad']             = '~r~[E]~s~ Hack Keypad',
-    ['secure_vault']            = '~r~[G]~s~ Secure Vault',
-    ['grab_cash']               = '~r~[E]~s~ Grab Crash',
+    ['drill_close_safe']        = 'Drill Safe',
+    ['safe_destroyed']          = 'Safe [destroyed]',
+    ['safe_drilled']            = 'Safe [drilled]',
+    ['yacht_heist_interact']    = 'Start Yacht Heist',
+    ['hack_keypad']             = 'Hack Keypad',
+    ['secure_vault']            = 'Secure Vault',
+    ['grab_cash']               = 'Grab Cash',
 
     -- Progress Bar Texts:
     ['pb_starting']             = 'STARTING',

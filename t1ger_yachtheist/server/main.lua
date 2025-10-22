@@ -1,166 +1,278 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-local ESX = exports['es_extended']:getSharedObject()
+local QBCore = exports['qb-core']:GetCoreObject()
 
-local cooldown = {active = false, duration = (Config.CooldownTimer * 60000), timer = 0}
+local heistState = {
+        cooldown = false,
+        terminal = { activated = false },
+        keypad = { hacked = false },
+        trolley = { grabbing = false, taken = false },
+        safes = {}
+}
 
--- Police Notify
-RegisterServerEvent('t1ger_yachtheist:PoliceNotifySV')
-AddEventHandler('t1ger_yachtheist:PoliceNotifySV', function(type)
-    if type == "alert" then 
-        TriggerClientEvent('t1ger_yachtheist:PoliceNotifyCL', -1, Lang['police_notify'])
-    elseif type == "secure" then 
-        TriggerClientEvent('t1ger_yachtheist:PoliceNotifyCL', -1, Lang['police_notify_2'])
-    end
+for i = 1, #Config.Safes do
+        heistState.safes[i] = { robbed = false, failed = false, rewarded = false }
+end
+
+local participants = {}
+local cooldown = { active = false, timer = 0 }
+local useOxInventory = GetResourceState('ox_inventory') == 'started'
+
+local function syncState(target)
+        if target then
+                TriggerClientEvent('t1ger_yachtheist:updateState', target, heistState)
+        else
+                TriggerClientEvent('t1ger_yachtheist:updateState', -1, heistState)
+        end
+end
+
+local function resetSafes()
+        for i = 1, #heistState.safes do
+                heistState.safes[i].robbed = false
+                heistState.safes[i].failed = false
+                heistState.safes[i].rewarded = false
+        end
+end
+
+local function resetHeist()
+        heistState.terminal.activated = false
+        heistState.keypad.hacked = false
+        heistState.trolley.grabbing = false
+        heistState.trolley.taken = false
+        resetSafes()
+        participants = {}
+end
+
+local function isParticipant(source)
+        return participants[source] == true
+end
+
+local function registerParticipant(source)
+        participants[source] = true
+end
+
+local function startCooldown()
+        heistState.cooldown = true
+        cooldown.active = true
+        cooldown.timer = Config.CooldownTimer * 60000
+end
+
+local function stopCooldown()
+        heistState.cooldown = false
+        cooldown.active = false
+        cooldown.timer = 0
+end
+
+CreateThread(function()
+        while true do
+                Wait(1000)
+                if cooldown.active then
+                        if cooldown.timer <= 0 then
+                                stopCooldown()
+                                syncState()
+                        else
+                                cooldown.timer = cooldown.timer - 1000
+                        end
+                else
+                        Wait(4000)
+                end
+        end
 end)
 
--- Remove x amount of item(s) from inventory:
-ESX.RegisterServerCallback('t1ger_yachtheist:removeItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if xPlayer.getInventoryItem(item).count >= amount then
-		xPlayer.removeInventoryItem(item, amount)
-		cb(true)
-	else
-		cb(false)
-	end
+AddEventHandler('playerDropped', function()
+        participants[source] = nil
 end)
 
--- Check Item in Inventory:
-ESX.RegisterServerCallback('t1ger_yachtheist:getItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if xPlayer.getInventoryItem(item).count >= amount then
-		cb(true)
-	else
-		cb(false)
-	end
+local function playerHasJob(source, jobs)
+        local xPlayer = QBCore.Functions.GetPlayer(source)
+        if not xPlayer then return false end
+        for _, job in ipairs(jobs) do
+                if xPlayer.PlayerData.job and xPlayer.PlayerData.job.name == job then
+                        if xPlayer.PlayerData.job.onduty == false then
+                                return false
+                        end
+                        return true
+                end
+        end
+        return false
+end
+
+local function addDirtyMoney(src, amount)
+        local player = QBCore.Functions.GetPlayer(src)
+        if not player then return end
+        if useOxInventory then
+                exports.ox_inventory:AddItem(src, 'black_money', amount, false, false, false)
+        else
+                player.Functions.AddMoney('cash', amount, 't1ger_yachtheist_dirty')
+        end
+end
+
+lib.callback.register('t1ger_yachtheist:getState', function(source)
+        return heistState
 end)
 
--- Event to update safe state:
-RegisterServerEvent('t1ger_yachtheist:SafeDataSV')
-AddEventHandler('t1ger_yachtheist:SafeDataSV', function(type, id, state)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if type == "robbed" then
-        Config.Safes[id].robbed = state
-    elseif type == "failed" then
-        Config.Safes[id].failed = state
-    end
-    TriggerClientEvent('t1ger_yachtheist:SafeDataCL', -1, type, id, state)
+lib.callback.register('t1ger_yachtheist:startHeist', function(source)
+        if heistState.cooldown then
+                return { success = false, reason = Lang['yacht_cooldown'] }
+        end
+        if heistState.terminal.activated then
+                return { success = false, reason = Lang['yacht_activated'] }
+        end
+        local cops = 0
+        for _, job in ipairs(Config.PoliceSettings.jobs) do
+                local playersOnDuty = QBCore.Functions.GetPlayersOnDuty(job)
+                if type(playersOnDuty) == 'table' then
+                        cops = cops + #playersOnDuty
+                end
+        end
+        if cops < Config.PoliceSettings.requiredCops then
+                return { success = false, reason = Lang['not_enough_cops'] }
+        end
+        heistState.terminal.activated = true
+        heistState.keypad.hacked = false
+        heistState.trolley.grabbing = false
+        heistState.trolley.taken = false
+        resetSafes()
+        registerParticipant(source)
+        syncState()
+        return { success = true }
 end)
 
--- Vault Reward:
-RegisterServerEvent('t1ger_yachtheist:vaultReward')
-AddEventHandler('t1ger_yachtheist:vaultReward', function()
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.VaultRewards
-	-- Chance to keep drill:
-	math.randomseed(GetGameTimer())
-	if math.random(0,100) <= Config.ChanceToKeepDrill then 
-		xPlayer.addInventoryItem(Config.DatabaseItems['drill'], 1)
-	end
-	-- Money:
-	local amount = ((math.random(cfg.money.min, cfg.money.max)) * 1000)
-	if cfg.money.dirtyCash then xPlayer.addAccountMoney('black_money', amount) else xPlayer.addMoney(amount) end
-	-- items:
-	for k,v in pairs(cfg.items) do
-		local invItem = xPlayer.getInventoryItem(v.item)
-		math.randomseed(GetGameTimer())
-		if math.random(0,100) <= v.chance then
-			Citizen.Wait(250)
-			math.randomseed(GetGameTimer())
-			local amount = math.random(v.min, v.max)
-			xPlayer.addInventoryItem(v.item, amount)
-			TriggerClientEvent('t1ger_yachtheist:ShowNotifyESX', xPlayer.source, (Lang['safe_item_reward']:format(amount, invItem.label)))
-		end
-		Citizen.Wait(250)
-	end
+lib.callback.register('t1ger_yachtheist:canHack', function(source, itemName)
+        if not heistState.terminal.activated then
+                return { success = false, reason = Lang['yacht_cooldown'] }
+        end
+        if heistState.keypad.hacked then
+                return { success = false, reason = Lang['yacht_activated'] }
+        end
+        local player = QBCore.Functions.GetPlayer(source)
+        if not player then
+                return { success = false, reason = Lang['need_hacker_item'] }
+        end
+        registerParticipant(source)
+        local item = player.Functions.GetItemByName(itemName)
+        if item and item.amount and item.amount > 0 then
+                return { success = true }
+        end
+        return { success = false, reason = Lang['need_hacker_item'] }
 end)
 
--- Add Grabbed Cash:
-ESX.RegisterServerCallback('t1ger_yachtheist:addGrabbedCash',function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	local cfg = Config.VaultRewards.trolley
-	math.randomseed(GetGameTimer())
-    local amount = (math.random(cfg.min, cfg.max))
-	if cfg.dirtyCash then xPlayer.addAccountMoney('black_money', amount) else xPlayer.addMoney(amount) end
-    cb(amount)
+lib.callback.register('t1ger_yachtheist:consumeItem', function(source, itemName, amount)
+        amount = amount or 1
+        local player = QBCore.Functions.GetPlayer(source)
+        if not player then return false end
+        local item = player.Functions.GetItemByName(itemName)
+        if item and item.amount and item.amount >= amount then
+                player.Functions.RemoveItem(itemName, amount)
+                return true
+        end
+        return false
 end)
 
--- Check Police:
-ESX.RegisterServerCallback('t1ger_yachtheist:checkPolice',function(source, cb)
-    local xPlayers = ESX.GetExtendedPlayers()
-	PoliceOnline = 0
-	for i=1, #(xPlayers) do
-		local xPlayer = xPlayers[i]
-		for k,v in pairs(Config.PoliceSettings.jobs) do
-			if xPlayer.job.name == v then
-				PoliceOnline = PoliceOnline + 1
-			end
-		end
-	end
-    if PoliceOnline >= Config.PoliceSettings.requiredCops then 
-        cb(true)
-    else
-        cb(false)
-    end
+lib.callback.register('t1ger_yachtheist:addGrabbedCash', function(source)
+        if not heistState.terminal.activated or heistState.trolley.taken then
+                return 0
+        end
+        local player = QBCore.Functions.GetPlayer(source)
+        if not player then return 0 end
+        registerParticipant(source)
+        local cfg = Config.VaultRewards.trolley
+        local amount = math.random(cfg.min, cfg.max)
+        if cfg.dirtyCash then
+                addDirtyMoney(source, amount)
+        else
+                player.Functions.AddMoney('cash', amount, 't1ger_yachtheist_trolley')
+        end
+        return amount
 end)
 
--- Force Give Item:
-RegisterServerEvent('t1ger_yachtheist:giveItem')
-AddEventHandler('t1ger_yachtheist:giveItem', function(item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-    xPlayer.addInventoryItem(item, amount)
+RegisterNetEvent('t1ger_yachtheist:setKeypadState', function(state)
+        local src = source
+        if not heistState.terminal.activated then return end
+        heistState.keypad.hacked = state and true or false
+        registerParticipant(src)
+        syncState()
 end)
 
-RegisterServerEvent('t1ger_yachtheist:resetHeistSV')
-AddEventHandler('t1ger_yachtheist:resetHeistSV', function()
-    local xPlayer = ESX.GetPlayerFromId(source)
-
-	Config.Yacht.terminal.activated = false
-	Config.Yacht.keypad.hacked = false
-	Config.Yacht.trolley.grabbing = false
-	Config.Yacht.trolley.taken = false
-
-	for i = 1, #Config.Safes do 
-		Config.Safes[i].robbed = false
-		Config.Safes[i].failed = false
-	end
-
-	-- enable cooldown:
-	Config.Yacht.cooldown = true
-	cooldown.active = true
-	cooldown.timer = cooldown.duration
-
-	Wait(400)
-    TriggerClientEvent('t1ger_yachtheist:resetHeistCL', -1)
+RegisterNetEvent('t1ger_yachtheist:setTrolleyState', function(field, value)
+        if field ~= 'grabbing' and field ~= 'taken' then return end
+        if not heistState.terminal.activated then return end
+        heistState.trolley[field] = value and true or false
+        registerParticipant(source)
+        syncState()
 end)
 
--- Force Delete Object:
-RegisterServerEvent('t1ger_yachtheist:forceDeleteSV')
-AddEventHandler('t1ger_yachtheist:forceDeleteSV', function(ObjNet)
-    TriggerClientEvent('t1ger_yachtheist:forceDeleteCL', -1, ObjNet)
+RegisterNetEvent('t1ger_yachtheist:SafeDataSV', function(type, id, state)
+        local src = source
+        local safe = heistState.safes[id]
+        if not safe then return end
+        if type == 'robbed' and not safe.robbed then
+                safe.robbed = state and true or false
+                safe.rewarded = false
+                registerParticipant(src)
+                TriggerClientEvent('t1ger_yachtheist:SafeDataCL', -1, 'robbed', id, safe.robbed)
+                syncState()
+        elseif type == 'failed' and not safe.failed then
+                safe.failed = state and true or false
+                TriggerClientEvent('t1ger_yachtheist:SafeDataCL', -1, 'failed', id, safe.failed)
+                syncState()
+        end
 end)
 
--- Update Config SV:
-RegisterServerEvent('t1ger_yachtheist:updateConfigSV')
-AddEventHandler('t1ger_yachtheist:updateConfigSV', function(data)
-	TriggerClientEvent('t1ger_yachtheist:updateConfigCL', -1, data)
+RegisterNetEvent('t1ger_yachtheist:vaultReward', function(id)
+        local src = source
+        local player = QBCore.Functions.GetPlayer(src)
+        if not player then return end
+        local safe = heistState.safes[id]
+        if not safe or not safe.robbed or safe.rewarded then return end
+        registerParticipant(src)
+        safe.rewarded = true
+        local cfg = Config.VaultRewards
+        local amount = math.random(cfg.money.min, cfg.money.max) * 1000
+        if cfg.money.dirtyCash then
+                addDirtyMoney(src, amount)
+        else
+                player.Functions.AddMoney('cash', amount, 't1ger_yachtheist_safe')
+        end
+        TriggerClientEvent('t1ger_yachtheist:client:notify', src, (Lang['safe_money_reward']):format(amount), 'success')
+        for _, v in pairs(cfg.items) do
+                if math.random(0, 100) <= v.chance then
+                        local count = math.random(v.min, v.max)
+                        player.Functions.AddItem(v.item, count)
+                        local itemInfo = QBCore.Shared.Items[v.item:lower()] or QBCore.Shared.Items[v.item]
+                        local label = itemInfo and itemInfo.label or v.item
+                        TriggerClientEvent('t1ger_yachtheist:client:notify', src, (Lang['safe_item_reward']):format(count, label), 'success')
+                end
+        end
 end)
 
--- thread for syncing the cooldown timer
-Citizen.CreateThread(function() -- do not touch this thread function!
-	while true do
-		Citizen.Wait(1000)
-		if cooldown.active then 
-			if cooldown.timer <= 0 then
-				Config.Yacht.cooldown = false
-				cooldown.active = false 
-			else
-				cooldown.timer = cooldown.timer - 1000
-			end
-		else
-			Citizen.Wait(5000)
-		end
-	end
+RegisterNetEvent('t1ger_yachtheist:giveItem', function(item, amount)
+        local player = QBCore.Functions.GetPlayer(source)
+        if not player then return end
+        player.Functions.AddItem(item, amount or 1)
+end)
+
+RegisterNetEvent('t1ger_yachtheist:resetHeistSV', function()
+        local src = source
+        local allowed = playerHasJob(src, Config.PoliceSettings.jobs) or isParticipant(src)
+        if not allowed then return end
+        resetHeist()
+        startCooldown()
+        syncState()
+        TriggerClientEvent('t1ger_yachtheist:resetHeistCL', -1)
+end)
+
+RegisterNetEvent('t1ger_yachtheist:forceDeleteSV', function(objNet)
+        TriggerClientEvent('t1ger_yachtheist:forceDeleteCL', -1, objNet)
+end)
+
+RegisterNetEvent('t1ger_yachtheist:PoliceNotifySV', function(type)
+        if not Config.PoliceSettings.enableAlert then return end
+        if type == 'alert' then
+                TriggerClientEvent('t1ger_yachtheist:PoliceNotifyCL', -1, Lang['police_notify'])
+        elseif type == 'secure' then
+                TriggerClientEvent('t1ger_yachtheist:PoliceNotifyCL', -1, Lang['police_notify_2'])
+        end
 end)

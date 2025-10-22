@@ -1,134 +1,252 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-local QBCore = exports["qb-core"]:GetCoreObject()
+local QBCore = exports['qb-core']:GetCoreObject()
+local cfg = Config.TruckRobbery
 
-local jobCooldown = {} 
+local cooldowns = {}
+local activeJobs = {}
+local truckSpawns = {}
 
-RegisterServerEvent('t1ger_truckrobbery:jobCooldown',function(source)
-	local xPlayer = QBCore.Functions.GetPlayer(source)
-	table.insert(jobCooldown,{cooldown = xPlayer.PlayerData.citizenid, time = (Config.TruckRobbery.cooldown * 60000)}) -- cooldown timer for doing missions
-end)
-
-lib.cron.new("* * * * *",function() 
-		for k,v in pairs(jobCooldown) do
-			if v.time <= 0 then
-				RemoveCooldownTimer(v.cooldown)
-			else
-				v.time = v.time - 1000
-			end
-		end
-end, true)
--- Callback to get cops count:
-lib.callback.register("t1ger_truckrobbery:copCount",function(source) 
-	local players,count= QBCore.Functions.GetPlayersOnDuty("police")
-	return count
-end)
--- Callback to get cooldown:
-lib.callback.register("t1ger_truckrobbery:getCooldown",function(source) 
-	local xPlayer = QBCore.Functions.GetPlayer(source)
-	if not CheckCooldownTimer(xPlayer.PlayerData.citizenid) then
-		return nil
-	else
-		return GetCooldownTimer(xPlayer.PlayerData.citizenid)
-	end
-end)
--- Callback to check if ply has job fees:
-
-lib.callback.register("t1ger_truckrobbery:getCooldown",function(source) 
-	local xPlayer = QBCore.Functions.GetPlayer(source)
-	local money = 0
-	if Config.TruckRobbery.computer.fees.bankMoney then 
-		money = xPlayer.PlayerData.money.bank
-	else
-		money = xPlayer.PlayerData.money.cash
-	end
-	if money >= Config.TruckRobbery.computer.fees.amount then
-        return true
-    else
-        return false
-    end
-end)
-
--- server side function to accept the mission
-RegisterServerEvent('t1ger_truckrobbery:startJobSV', function(item)
-	local xPlayer = QBCore.Functions.GetPlayer(source)
-	TriggerEvent('t1ger_truckrobbery:jobCooldown', source)
-	if Config.TruckRobbery.computer.fees.bankMoney then 
-		xPlayer.Functions.RemoveMoney('bank', Config.TruckRobbery.computer.fees.amount,"T1ger")
-	else
-		xPlayer.Functions.RemoveMoney("cash",Config.TruckRobbery.computer.fees.amount,"T1ger")
-	end
-	TriggerClientEvent('t1ger_truckrobbery:startJobCL', source)
-end)
-
--- Event to trigger job reward:
-RegisterServerEvent('t1ger_truckrobbery:jobReward',function()
-	local cfg = Config.TruckRobbery.reward
-	local xPlayer = QBCore.Functions.GetPlayer(source)
-	local reward = math.random(cfg.money.min, cfg.money.max)
-	
-	if cfg.money.dirty then
-		exports.ox_inventory:AddItem(source, 'black_money', reward, false, false, false)
-	else
-		xPlayer.Functions.AddMoney("cash",reward)
-	end
-	TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.PlayerData.source, (Lang['reward_notify']:format(reward)))
-	
-	if cfg.items.enable then
-		for k,v in pairs(cfg.items.list) do
-			if math.random(0,100) <= v.chance then 
-				local amount = math.random(v.min, v.max)
-				local name = tostring(v.item)
-				if Config.HasItemLabel then
-					name = exports.ox_inventory:GetItem(source, v.item, false, false)
-				end
-				xPlayer.Function.AddItem(v.item, amount)
-				TriggerClientEvent('t1ger_truckrobbery:ShowNotifyESX', xPlayer.playerData.source, (Lang['you_received_item']:format(amount,name.label)))
-			end
-		end
-	end
-end)
-
-lib.callback.register("t1ger_truckrobbery:SpawnTruck",function(source,jobData) 
-	if not jobdata then return end
-    local veh = CreateVehicleServerSetter(`stockade`, "automobile", jobData.pos, 180.0)
-    while not DoesEntityExist(veh) do Wait(0) end
-    return veh
-end)
--- Event to trigger police notifications:
-RegisterServerEvent('t1ger_truckrobbery:PoliceNotifySV', function(targetCoords, streetName)
-	TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyCL', -1, (Lang['police_notify']):format(streetName))
-	TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyBlip', -1, targetCoords)
-end)
-
--- Event to update config.lua across all clients:
-RegisterServerEvent('t1ger_truckrobbery:SyncDataSV',function(data)
-	TriggerClientEvent("t1ger_truckrobbery:SyncJob",-1,data)
-    TriggerClientEvent('t1ger_truckrobbery:SyncDataCL', -1, data)
-end)
-
--- Do not touch these 3 functions:
-function RemoveCooldownTimer(source)
-    for k,v in pairs(jobCooldown) do
-        if v.cooldown == source then
-            table.remove(jobCooldown,k)
-        end
-    end
+for index = 1, #Config.TruckSpawns do
+    truckSpawns[index] = { inUse = false }
 end
-function GetCooldownTimer(source)
-    for k,v in pairs(jobCooldown) do
-        if v.cooldown == source then
-            return math.ceil(v.time/60000)
-        end
-    end
-end
-function CheckCooldownTimer(source)
-    for k,v in pairs(jobCooldown) do
-        if v.cooldown == source then
+
+local function isPoliceJob(jobName)
+    if not jobName then return false end
+    for _, name in ipairs(cfg.police.jobs) do
+        if name == jobName then
             return true
         end
     end
     return false
 end
+
+local function iteratePlayers(callback)
+    if QBCore.Functions.GetQBPlayers then
+        for _, player in pairs(QBCore.Functions.GetQBPlayers()) do
+            callback(player)
+        end
+    else
+        for _, src in ipairs(QBCore.Functions.GetPlayers()) do
+            local player = QBCore.Functions.GetPlayer(src)
+            if player then
+                callback(player)
+            end
+        end
+    end
+end
+
+local function getDutyPolice()
+    local total = 0
+    iteratePlayers(function(player)
+        local job = player.PlayerData.job
+        if job and job.onduty and isPoliceJob(job.name) then
+            total = total + 1
+        end
+    end)
+    return total
+end
+
+local function getCooldownRemaining(citizenId)
+    local expires = cooldowns[citizenId]
+    if not expires then return 0 end
+    local remaining = expires - os.time()
+    if remaining <= 0 then
+        cooldowns[citizenId] = nil
+        return 0
+    end
+    return remaining
+end
+
+local function copySpawn(index)
+    local spawn = Config.TruckSpawns[index]
+    local data = {
+        pos = { table.unpack(spawn.pos) },
+        heading = spawn.heading,
+        security = {}
+    }
+    if spawn.security then
+        for i, guard in ipairs(spawn.security) do
+            data.security[i] = {
+                ped = guard.ped,
+                seat = guard.seat,
+                weapon = guard.weapon
+            }
+        end
+    end
+    return data
+end
+
+local function pickSpawn()
+    local available = {}
+    for index = 1, #Config.TruckSpawns do
+        if not truckSpawns[index].inUse then
+            available[#available + 1] = index
+        end
+    end
+    if #available == 0 then return nil end
+    return available[math.random(1, #available)]
+end
+
+lib.callback.register('t1ger_truckrobbery:requestJob', function(source)
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then return { success = false, reason = 'Player unavailable.' } end
+
+    local citizenId = player.PlayerData.citizenid
+    if activeJobs[citizenId] then
+        return { success = false, reason = Lang.job_in_progress }
+    end
+
+    if isPoliceJob(player.PlayerData.job and player.PlayerData.job.name) then
+        return { success = false, reason = Lang.not_for_police }
+    end
+
+    local cops = getDutyPolice()
+    if cops < cfg.police.minCops then
+        return { success = false, reason = Lang.not_enough_police }
+    end
+
+    local remaining = getCooldownRemaining(citizenId)
+    if remaining > 0 then
+        local minutes = math.ceil(remaining / 60)
+        return { success = false, reason = Lang.cooldown_time_left:format(minutes) }
+    end
+
+    local fees = cfg.computer.fees
+    local account = fees.account == 'cash' and 'cash' or 'bank'
+    local balance = player.Functions.GetMoney(account)
+    if balance < fees.amount then
+        return { success = false, reason = Lang.not_enough_money }
+    end
+
+    local index = pickSpawn()
+    if not index then
+        return { success = false, reason = Lang.no_available_jobs }
+    end
+
+    truckSpawns[index].inUse = true
+    player.Functions.RemoveMoney(account, fees.amount, 'truck-robbery-fee')
+
+    local jobId = string.format('%s:%d:%d', citizenId, index, os.time())
+    activeJobs[citizenId] = {
+        id = jobId,
+        index = index,
+        stage = 'assigned',
+        started = os.time()
+    }
+
+    cooldowns[citizenId] = os.time() + (cfg.cooldown * 60)
+
+    local spawn = copySpawn(index)
+
+    return {
+        success = true,
+        job = {
+            id = jobId,
+            index = index,
+            spawn = spawn
+        }
+    }
+end)
+
+RegisterNetEvent('t1ger_truckrobbery:updateStage', function(jobId, stage)
+    local source = source
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then return end
+
+    local citizenId = player.PlayerData.citizenid
+    local job = activeJobs[citizenId]
+    if not job or job.id ~= jobId then return end
+
+    job.stage = stage
+end)
+
+lib.callback.register('t1ger_truckrobbery:claimReward', function(source, jobId, index)
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then
+        return { success = false, message = 'Player unavailable.' }
+    end
+
+    local citizenId = player.PlayerData.citizenid
+    local job = activeJobs[citizenId]
+    if not job or job.id ~= jobId or job.index ~= index then
+        return { success = false, message = Lang.job_not_active }
+    end
+
+    if job.stage ~= 'truck_opened' then
+        return { success = false, message = Lang.truck_not_breached }
+    end
+
+    local rewardCfg = cfg.reward
+    local payout = math.random(rewardCfg.money.min, rewardCfg.money.max)
+
+    if rewardCfg.money.dirty then
+        exports.ox_inventory:AddItem(source, 'black_money', payout, { description = 'Truck Robbery' })
+    else
+        player.Functions.AddMoney('cash', payout, 'truck-robbery')
+    end
+
+    local itemMessages = {}
+    if rewardCfg.items.enable and rewardCfg.items.list then
+        for _, entry in ipairs(rewardCfg.items.list) do
+            local chance = entry.chance or 0
+            if math.random(100) <= chance then
+                local amount = math.random(entry.min or 1, entry.max or 1)
+                local success = exports.ox_inventory:AddItem(source, entry.item, amount)
+                if success then
+                    itemMessages[#itemMessages + 1] = Lang.you_received_item:format(amount, entry.item)
+                end
+            end
+        end
+    end
+
+    activeJobs[citizenId] = nil
+    if truckSpawns[job.index] then
+        truckSpawns[job.index].inUse = false
+    end
+
+    return {
+        success = true,
+        message = Lang.reward_notify:format(payout),
+        items = itemMessages
+    }
+end)
+
+RegisterNetEvent('t1ger_truckrobbery:releaseJob', function(jobId, index, aborted)
+    local source = source
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then return end
+
+    local citizenId = player.PlayerData.citizenid
+    local job = activeJobs[citizenId]
+    if not job or job.id ~= jobId then
+        if index and truckSpawns[index] then
+            truckSpawns[index].inUse = false
+        end
+        return
+    end
+
+    if truckSpawns[job.index] then
+        truckSpawns[job.index].inUse = false
+    end
+
+    if aborted then
+        cooldowns[citizenId] = os.time() + (cfg.cooldown * 60)
+    end
+
+    activeJobs[citizenId] = nil
+end)
+
+RegisterNetEvent('t1ger_truckrobbery:PoliceNotifySV', function(targetCoords, street)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return end
+
+    local job = activeJobs[player.PlayerData.citizenid]
+    if not job then return end
+
+    TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyCL', -1, Lang.police_notify:format(street))
+    TriggerClientEvent('t1ger_truckrobbery:PoliceNotifyBlip', -1, targetCoords)
+end)

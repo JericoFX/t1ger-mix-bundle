@@ -7,11 +7,12 @@ https://youtu.be/DEjNVA_PSyU
 https://forum.cfx.re/t/esx-t1ger-deliveries-immersive-delivery-jobs-employees-and-much-more/4790112
 
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore](https://github.com/qbcore-framework/qb-core)
 
-## DEPENCENCIES:
-- [ESX Society (OPTIONAL)](https://github.com/esx-framework/esx_society)
-- [ESX Addon Accounts (OPTIONAL)](https://github.com/esx-framework/esx_addonaccount)
+## DEPENDENCIES:
+- [qb-management](https://github.com/qbcore-framework/qb-management)
+- [ox_lib](https://github.com/overextended/ox_lib)
+- [t1ger_shops (OPTIONAL)](https://t1ger.tebex.io/package/5054933)
 
 ## INSTALLATION:
 1. Extract the resource and place it into your resource folder.

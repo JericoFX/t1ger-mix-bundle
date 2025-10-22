@@ -1,278 +1,300 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
-ESX = exports['es_extended']:getSharedObject()
+-------------------------------------
+local QBCore = exports['qb-core']:GetCoreObject()
 
-local exchange_cooldown = {}
-local job_cooldown = {}
+local exchangeCooldown = {}
+local jobCooldown = {}
 
-Citizen.CreateThread(function()
-    Citizen.Wait(1000)
+local function getCitizenId(Player)
+    return Player and Player.PlayerData and Player.PlayerData.citizenid
+end
+
+local function getItemLabel(name)
+    local item = QBCore.Shared.Items[name]
+    return item and item.label or name
+end
+
+local function hasFunds(Player, fees)
+    if not Player or type(fees) ~= 'table' then return false end
+    local account = fees.account or 'cash'
+    local amount = tonumber(fees.amount) or 0
+    if amount <= 0 then return true end
+    if account == 'cash' or account == 'bank' then
+        local balance = Player.Functions.GetMoney(account)
+        return (balance or 0) >= amount
+    end
+
+    local item = Player.Functions.GetItemByName(account)
+    return item and (item.amount or item.count or 0) >= amount
+end
+
+local function removeFunds(Player, fees)
+    if not Player or type(fees) ~= 'table' then return end
+    local account = fees.account or 'cash'
+    local amount = tonumber(fees.amount) or 0
+    if amount <= 0 then return end
+    if account == 'cash' or account == 'bank' then
+        Player.Functions.RemoveMoney(account, amount, 'gold-currency-fee')
+    else
+        Player.Functions.RemoveItem(account, amount)
+    end
+end
+
+local function giveFunds(Player, account, amount, reason)
+    if not Player then return end
+    local value = tonumber(amount) or 0
+    if value <= 0 then return end
+    if account == 'cash' or account == 'bank' then
+        Player.Functions.AddMoney(account, value, reason)
+    else
+        Player.Functions.AddItem(account, value)
+    end
+end
+
+local function notifyPlayer(source, message, messageType)
+    if not source or not message then return end
+    TriggerClientEvent('t1ger_goldcurrency:notify', source, { description = message, type = messageType or 'inform' })
+end
+
+local function setCooldown(store, identifier, minutes)
+    if not identifier then return end
+    local duration = tonumber(minutes) or 0
+    if duration <= 0 then
+        store[identifier] = nil
+        return
+    end
+    store[identifier] = os.time() + (duration * 60)
+end
+
+local function isOnCooldown(store, identifier)
+    local expires = identifier and store[identifier]
+    if not expires then return false end
+    if expires <= os.time() then
+        store[identifier] = nil
+        return false
+    end
+    return true
+end
+
+local function getCooldownMinutes(store, identifier)
+    local expires = identifier and store[identifier]
+    if not expires then return 0 end
+    local remaining = expires - os.time()
+    if remaining <= 0 then
+        store[identifier] = nil
+        return 0
+    end
+    return math.ceil(remaining / 60)
+end
+
+local function countPolice()
+    local total = 0
+    local seen = {}
+    for _, jobName in ipairs(Config.PoliceSettings.jobs) do
+        local dutyPlayers = QBCore.Functions.GetPlayersOnDuty(jobName)
+        if type(dutyPlayers) == 'table' then
+            for _, src in ipairs(dutyPlayers) do
+                if not seen[src] then
+                    total = total + 1
+                    seen[src] = true
+                end
+            end
+        end
+        if not Config.PoliceSettings.onDutyOnly then
+            for _, Player in pairs(QBCore.Functions.GetQBPlayers()) do
+                if Player and Player.PlayerData and Player.PlayerData.job and Player.PlayerData.job.name == jobName then
+                    local src = Player.PlayerData.source
+                    if not seen[src] then
+                        total = total + 1
+                        seen[src] = true
+                    end
+                end
+            end
+        end
+    end
+    return total
+end
+
+lib.cron.new('*/30 * * * * *', function()
+    local now = os.time()
+    for identifier, expires in pairs(jobCooldown) do
+        if expires <= now then
+            jobCooldown[identifier] = nil
+        end
+    end
+    for identifier, expires in pairs(exchangeCooldown) do
+        if expires <= now then
+            exchangeCooldown[identifier] = nil
+        end
+    end
+end)
+
+CreateThread(function()
+    Wait(1000)
     TriggerClientEvent('t1ger_goldcurrency:createNPC', -1, Config.JobNPC)
 end)
 
-AddEventHandler('esx:playerLoaded', function(playerId)
-	TriggerClientEvent('t1ger_goldcurrency:createNPC', playerId, Config.JobNPC)
+RegisterNetEvent('QBCore:Server:PlayerLoaded', function(Player)
+    local src = Player and Player.PlayerData and Player.PlayerData.source or source
+    TriggerClientEvent('t1ger_goldcurrency:createNPC', src, Config.JobNPC)
 end)
 
--- thread for syncing the cooldown timer
-Citizen.CreateThread(function() -- do not touch this thread function!
-	while true do
-	Citizen.Wait(1000)
-        -- exhange cooldown:
-		for k,v in pairs(exchange_cooldown) do
-			if v.timeExchange <= 0 then
-				RemoveExchangeCooldown(v.identifier)
-			else
-				v.timeExchange = v.timeExchange - 1000
-			end
-		end
-        -- job cooldown:
-		for k,v in pairs(job_cooldown) do
-			if v.timeJob <= 0 then
-				RemoveJobCooldown(v.identifier)
-			else
-				v.timeJob = v.timeJob - 1000
-			end
-		end
-	end
+RegisterNetEvent('QBCore:Server:OnPlayerLoaded', function(src)
+    TriggerClientEvent('t1ger_goldcurrency:createNPC', src or source, Config.JobNPC)
 end)
 
--- Add Job Cooldown
-RegisterServerEvent('t1ger_goldcurrency:addJobCooldown')
-AddEventHandler('t1ger_goldcurrency:addJobCooldown',function(source)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	table.insert(job_cooldown, {
-        identifier = xPlayer.identifier,
-        timeJob = ((Config.JobNPC.cooldown * 60000))
-    })
+lib.callback.register('t1ger_goldcurrency:getJobCooldown', function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return true end
+    local identifier = getCitizenId(Player)
+    if not identifier then return true end
+    if isOnCooldown(jobCooldown, identifier) then
+        notifyPlayer(source, (Lang['job_timer']):format(getCooldownMinutes(jobCooldown, identifier)), 'error')
+        return true
+    end
+    return false
 end)
 
--- Check Job Cooldown:
-ESX.RegisterServerCallback('t1ger_goldcurrency:getJobCooldown',function(source,cb)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if not GetJobCooldown(xPlayer.identifier) then
-		cb(false)
-	else
-        TriggerClientEvent('t1ger_goldcurrency:ShowNotifyESX', xPlayer.source, (Lang['job_timer']):format(GetJobTimer(xPlayer.identifier)))
-		cb(true)
-	end
+lib.callback.register('t1ger_goldcurrency:getJobFees', function(source, fees)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return false end
+    return hasFunds(Player, fees)
 end)
 
--- Get Job Fees:
-ESX.RegisterServerCallback('t1ger_goldcurrency:getJobFees', function(source, cb, fees)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	local money = 0
-	if fees.dirty then money = xPlayer.getAccount('black_money').money else money = xPlayer.getMoney() end
-	if money >= fees.amount then cb(true) else cb(false) end
+lib.callback.register('t1ger_goldcurrency:checkCops', function()
+    return countPolice() >= Config.PoliceSettings.requiredCops
 end)
 
--- Prepare Gold Job:
-RegisterServerEvent('t1ger_goldcurrency:prepareJobSV')
-AddEventHandler('t1ger_goldcurrency:prepareJobSV', function(id, fees, veh_model)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	-- Job Fees:
-    if fees.dirty then xPlayer.removeAccountMoney('black_money', fees.amount) else xPlayer.removeMoney(fees.amount) end
-	-- Add player cooldown:
-	TriggerEvent('t1ger_goldcurrency:addJobCooldown', xPlayer.source)
-	-- Start the job:
-	TriggerClientEvent('t1ger_goldcurrency:startTheGoldJob', source, id, veh_model)
+RegisterNetEvent('t1ger_goldcurrency:prepareJobSV', function(id, fees, vehModel)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+
+    local jobConfig = id and Config.GoldJobs and Config.GoldJobs[id]
+    if not jobConfig then
+        notifyPlayer(src, Lang['no_jobs_available'], 'error')
+        return
+    end
+
+    if not hasFunds(Player, fees) then
+        notifyPlayer(src, Lang['not_enough_money'], 'error')
+        return
+    end
+
+    removeFunds(Player, fees)
+    setCooldown(jobCooldown, getCitizenId(Player), Config.JobNPC.cooldown or 0)
+    TriggerClientEvent('t1ger_goldcurrency:startTheGoldJob', src, id, vehModel)
 end)
 
--- Update Config SV:
-RegisterServerEvent('t1ger_goldcurrency:updateConfigSV')
-AddEventHandler('t1ger_goldcurrency:updateConfigSV', function(data)
-	TriggerClientEvent('t1ger_goldcurrency:updateConfigCL', -1, data)
+RegisterNetEvent('t1ger_goldcurrency:updateConfigSV', function(data)
+    TriggerClientEvent('t1ger_goldcurrency:updateConfigCL', -1, data)
 end)
 
--- Event for police alerts
-RegisterServerEvent('t1ger_goldcurrency:PoliceNotifySV')
-AddEventHandler('t1ger_goldcurrency:PoliceNotifySV', function(targetCoords, streetName, label)
-	TriggerClientEvent('t1ger_goldcurrency:PoliceNotifyCL', -1, (label):format(streetName))
-	TriggerClientEvent('t1ger_goldcurrency:PoliceNotifyBlip', -1, targetCoords)
+RegisterNetEvent('t1ger_goldcurrency:PoliceNotifySV', function(targetCoords, streetName, label)
+    TriggerClientEvent('t1ger_goldcurrency:PoliceNotifyCL', -1, (label):format(streetName))
+    TriggerClientEvent('t1ger_goldcurrency:PoliceNotifyBlip', -1, targetCoords)
 end)
 
--- Smelting Reward:
-RegisterServerEvent('t1ger_goldcurrency:giveJobReward')
-AddEventHandler('t1ger_goldcurrency:giveJobReward', function()
-	local xPlayer = ESX.GetPlayerFromId(source)
+RegisterNetEvent('t1ger_goldcurrency:giveJobReward', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
 
-	for k,v in pairs(Config.JobReward) do 
-		math.randomseed(GetGameTimer())
-		local chance = math.random(0,100)
-		if chance <= v.chance then
-			Citizen.Wait(250)
-			math.randomseed(GetGameTimer())
-			local count = math.random(v.amount.min, v.amount.max)
-			-- add item:
-			local invItem = xPlayer.getInventoryItem(v.item)
-			local arr = {canCarry = false, limit = 0}
-			if Config.ItemWeightSystem then
-				if xPlayer.canCarryItem(v.item, count) then
-					arr.canCarry = true
-					arr.limit = invItem.weight
-				end
-			else
-				if invItem ~= -1 and (invItem.count + count) <= invItem.limit then
-					arr.canCarry = true
-					arr.limit = invItem.limit
-				end
-			end
-			if arr.canCarry then 
-				xPlayer.addInventoryItem(v.item, count)
-				TriggerClientEvent('t1ger_minerjob:ShowNotifyESX', xPlayer.source, (Lang['items_added']):format(count, invItem.label))
-			else
-				TriggerClientEvent('t1ger_minerjob:ShowNotifyESX', xPlayer.source, (Lang['item_limit_exceed']):format(invItem.label, arr.limit))
-			end
-		end
-		Citizen.Wait(250)
-	end
-end)
-
--- Get Inventory Item & Count:
-ESX.RegisterServerCallback('t1ger_goldcurrency:checkCops',function(source, cb)
-    local xPlayers = ESX.GetExtendedPlayers()
-	PoliceOnline = 0
-	for i=1, #(xPlayers) 1 do
-		local xPlayer = xPlayers[i]
-		for k,v in pairs(Config.PoliceSettings.jobs) do
-			if xPlayer.job.name == v then
-				PoliceOnline = PoliceOnline + 1
-			end
-		end
-	end
-    if PoliceOnline >= Config.PoliceSettings.requiredCops then 
-        cb(true)
-    else
-        cb(false)
+    for _, reward in ipairs(Config.JobReward) do
+        if math.random(0, 100) <= reward.chance then
+            Wait(250)
+            local count = math.random(reward.amount.min, reward.amount.max)
+            local success = Player.Functions.AddItem(reward.item, count)
+            local label = getItemLabel(reward.item)
+            if success then
+                notifyPlayer(src, (Lang['items_added']):format(count, label), 'success')
+            else
+                notifyPlayer(src, (Lang['item_limit_exceed']):format(label), 'error')
+            end
+        end
+        Wait(250)
     end
 end)
 
--- Get Inventory Item & Count:
-ESX.RegisterServerCallback('t1ger_goldcurrency:getInventoryItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if xPlayer.getInventoryItem(item).count >= amount then cb(true) else cb(false) end
-end)
-
--- Remove x amount of item(s) from inventory:
-ESX.RegisterServerCallback('t1ger_goldcurrency:removeItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if xPlayer.getInventoryItem(item).count >= amount then
-		xPlayer.removeInventoryItem(item, amount)
-		cb(true)
-	else
-		cb(false)
-	end
-end)
-
--- Remove x amount of item(s) from inventory:
-ESX.RegisterServerCallback('t1ger_goldcurrency:addItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-    local invItem = xPlayer.getInventoryItem(item)
-    local arr = {canCarry = false, limit = 0}
-	if Config.ItemWeightSystem then
-		if xPlayer.canCarryItem(item, amount) then
-			arr.canCarry = true
-			arr.limit = invItem.weight
-		end
-	else
-		if invItem ~= -1 and (invItem.count + amount) <= invItem.limit then
-			arr.canCarry = true
-			arr.limit = invItem.limit
-		end
-	end
-	if arr.canCarry then 
-		xPlayer.addInventoryItem(item, amount)
-		TriggerClientEvent('t1ger_goldcurrency:ShowNotifyESX', xPlayer.source, (Lang['items_added']):format(amount, invItem.label))
-        cb(true)
-	else
-		TriggerClientEvent('t1ger_goldcurrency:ShowNotifyESX', xPlayer.source, (Lang['item_limit_exceed']):format(invItem.label, arr.limit))
-        cb(false)
-	end
-end)
-
--- Force Give Item:
-RegisterServerEvent('t1ger_goldcurrency:giveItem')
-AddEventHandler('t1ger_goldcurrency:giveItem', function(item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-    xPlayer.addInventoryItem(item, amount)
-end)
-
--- Exhange Reward:
-RegisterServerEvent('t1ger_goldcurrency:giveExchangeReward')
-AddEventHandler('t1ger_goldcurrency:giveExchangeReward', function(amount, dirty)
-	local xPlayer = ESX.GetPlayerFromId(source)
-    if dirty then
-        xPlayer.addAccountMoney('black_money', amount)
-    else
-        xPlayer.addMoney(amount)
+lib.callback.register('t1ger_goldcurrency:getInventoryItem', function(source, item, amount)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return false end
+    if type(item) ~= 'string' then return false end
+    local required = tonumber(amount) or 0
+    if required <= 0 then return false end
+    local invItem = Player.Functions.GetItemByName(item)
+    if invItem and (invItem.amount or invItem.count or 0) >= required then
+        return true
     end
-    TriggerClientEvent('t1ger_goldcurrency:ShowNotifyESX', xPlayer.source, (Lang['money_received']):format(amount))
+    return false
 end)
 
-RegisterServerEvent('t1ger_goldcurrency:addExchangeCooldown')
-AddEventHandler('t1ger_goldcurrency:addExchangeCooldown',function()
-    local xPlayer = ESX.GetPlayerFromId(source)
-	table.insert(exchange_cooldown, {
-        identifier = xPlayer.identifier,
-        timeExchange = ((Config.ExchangeSettings.cooldown * 60000))
-    })
+lib.callback.register('t1ger_goldcurrency:removeItem', function(source, item, amount)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return false end
+    if type(item) ~= 'string' then return false end
+    local quantity = tonumber(amount) or 0
+    if quantity <= 0 then return false end
+
+    local invItem = Player.Functions.GetItemByName(item)
+    if invItem and (invItem.amount or invItem.count or 0) >= quantity then
+        Player.Functions.RemoveItem(item, quantity)
+        return true
+    end
+    return false
 end)
 
--- Check Exchange Cooldown:
-ESX.RegisterServerCallback('t1ger_goldcurrency:getExchangeCooldown',function(source,cb)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	if not GetExchangeCooldown(xPlayer.identifier) then
-		cb(false)
-	else
-        TriggerClientEvent('t1ger_goldcurrency:ShowNotifyESX', xPlayer.source, (Lang['exchange_timer']):format(GetExchangeTimer(xPlayer.identifier)))
-		cb(true)
-	end
+lib.callback.register('t1ger_goldcurrency:addItem', function(source, item, amount)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return false end
+    if type(item) ~= 'string' then return false end
+    local quantity = tonumber(amount) or 0
+    if quantity <= 0 then return false end
+
+    local success = Player.Functions.AddItem(item, quantity)
+    local label = getItemLabel(item)
+    if success then
+        notifyPlayer(source, (Lang['items_added']):format(quantity, label), 'success')
+        return true
+    end
+
+    notifyPlayer(source, (Lang['item_limit_exceed']):format(label), 'error')
+    return false
 end)
 
--- DO NOT TOUCH!!
-function RemoveExchangeCooldown(source)
-	for k,v in pairs(exchange_cooldown) do
-		if v.identifier == source then
-			table.remove(exchange_cooldown, k)
-		end
-	end
-end
-function GetExchangeTimer(source)
-	for k,v in pairs(exchange_cooldown) do
-		if v.identifier == source then
-			return math.ceil(v.timeExchange/60000)
-		end
-	end
-end
-function GetExchangeCooldown(source)
-	for k,v in pairs(exchange_cooldown) do
-		if v.identifier == source then
-			return true
-		end
-	end
-	return false
-end
--- DO NOT TOUCH!!
-function RemoveJobCooldown(source)
-	for k,v in pairs(job_cooldown) do
-		if v.identifier == source then
-			table.remove(job_cooldown, k)
-		end
-	end
-end
-function GetJobTimer(source)
-	for k,v in pairs(job_cooldown) do
-		if v.identifier == source then
-			return math.ceil(v.timeJob/60000)
-		end
-	end
-end
-function GetJobCooldown(source)
-	for k,v in pairs(job_cooldown) do
-		if v.identifier == source then
-			return true
-		end
-	end
-	return false
-end
+RegisterNetEvent('t1ger_goldcurrency:giveItem', function(item, amount)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return end
+    if type(item) ~= 'string' then return end
+    local quantity = tonumber(amount) or 0
+    if quantity <= 0 then return end
+    Player.Functions.AddItem(item, quantity)
+end)
+
+RegisterNetEvent('t1ger_goldcurrency:giveExchangeReward', function(amount, account)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return end
+    local payout = tonumber(amount) or 0
+    if payout <= 0 then return end
+    giveFunds(Player, account or 'cash', payout, 'gold-currency-exchange')
+    notifyPlayer(source, (Lang['money_received']):format(payout), 'success')
+end)
+
+RegisterNetEvent('t1ger_goldcurrency:addExchangeCooldown', function()
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return end
+    setCooldown(exchangeCooldown, getCitizenId(Player), Config.ExchangeSettings.cooldown or 0)
+end)
+
+lib.callback.register('t1ger_goldcurrency:getExchangeCooldown', function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return true end
+    local identifier = getCitizenId(Player)
+    if not identifier then return true end
+    if isOnCooldown(exchangeCooldown, identifier) then
+        notifyPlayer(source, (Lang['exchange_timer']):format(getCooldownMinutes(exchangeCooldown, identifier)), 'error')
+        return true
+    end
+    return false
+end)

@@ -1,263 +1,430 @@
--------------------------------------
-------- Created by T1GER#9080 -------
-------------------------------------- 
+local QBCore = exports['qb-core']:GetCoreObject()
+local SharedUtils = SharedUtils
 
-local ESX = exports['es_extended']:getSharedObject()
-local deliveryCompanies = {}
+local companyState = {}
+local activeDeliveries = {}
+local routeCache = {}
 
-Citizen.CreateThread(function ()
-    while GetResourceState('mysql-async') ~= 'started' do Citizen.Wait(0) end
-    while GetResourceState(GetCurrentResourceName()) ~= 'started' do Citizen.Wait(0) end
-    if GetResourceState(GetCurrentResourceName()) == 'started' then InitializeDeliveries() end
-end)
+local function loadCompanies()
+    local results = MySQL.query.await('SELECT * FROM t1ger_deliveries') or {}
 
-Citizen.CreateThread(function()
-    for k,v in pairs(Config.Society) do
-        TriggerEvent('esx_society:registerSociety', v.name, v.label, v.account, v.datastore, v.inventory, v.data)
-    end
-end)
+    for _, row in ipairs(results) do
+        local id = tonumber(row.id)
+        local company = Config.Companies[id]
 
-function InitializeDeliveries()
-	Citizen.Wait(1000)
-	MySQL.Async.fetchAll('SELECT * FROM t1ger_deliveries', {}, function(results)
-		if next(results) then
-			for i = 1, #results do
-				local data = {
-					identifier = results[i].identifier,
-					id = results[i].id,
-					name = results[i].name,
-					level = results[i].level,
-					certificate = results[i].certificate
-				}
-				deliveryCompanies[results[i].id] = data
-				Config.Companies[results[i].id].owned = true
-				Config.Companies[results[i].id].data = data
-				Citizen.Wait(5)
-			end
-		end
-	end)
-	RconPrint('T1GER Deliveries Initialized\n')
-end
-
-AddEventHandler('esx:playerLoaded', function(playerId)
-	local xPlayer = ESX.GetPlayerFromId(playerId)
-	while not xPlayer do Citizen.Wait(100) end
-    SetupDeliveryCompanies(xPlayer.source)
-end)
-
-RegisterServerEvent('t1ger_deliveries:debugSV')
-AddEventHandler('t1ger_deliveries:debugSV', function()
-    SetupDeliveryCompanies(source)
-end)
-
-function SetupDeliveryCompanies(src)
-    local xPlayer = ESX.GetPlayerFromId(src)
-	while not xPlayer do Citizen.Wait(100) end
-    local isOwner, deliveryID = 0, 0
-	if next(deliveryCompanies) then
-		for k,v in pairs(deliveryCompanies) do
-			if v.identifier == xPlayer.identifier then 
-				isOwner = v.id
-			end
-            local currentJob = xPlayer.getJob()
-            if currentJob.name == Config.Society[Config.Companies[v.id].society].name then
-                deliveryID = v.id
-            end
-		end
-	end
-	TriggerClientEvent('t1ger_deliveries:loadCompanies', xPlayer.source, deliveryCompanies, Config.Companies, isOwner, towID)
-end
-
--- Event:
-RegisterServerEvent('t1ger_deliveries:updateCompanyDataSV')
-AddEventHandler('t1ger_deliveries:updateCompanyDataSV', function(id, data)
-	Config.Companies[id].data = data
-	TriggerClientEvent('t1ger_deliveries:updateCompanyDataCL', -1, id, Config.Companies[id].data)
-end)
-
--- Callback to check money & purchase tow service:
-ESX.RegisterServerCallback('t1ger_deliveries:buyCompany',function(source, cb, id, val, name)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local money = 0
-    if Config.BuyWithBank then money = xPlayer.getAccount('bank').money else money = xPlayer.getMoney() end
-	if money >= val.price then
-		if Config.BuyWithBank then xPlayer.removeAccountMoney('bank', val.price) else xPlayer.removeMoney(val.price) end
-        MySQL.Async.execute('INSERT INTO t1ger_deliveries (id, identifier, name) VALUES (@id, @identifier, @name)', {
-            ['id'] = id,
-			['identifier'] = xPlayer.identifier,
-            ['name'] = name
-        })
-		xPlayer.setJob(Config.Society[val.society].name, Config.Society[val.society].boss_grade)
-        cb(true)
-    else
-        cb(false)
-    end
-end)
-
-RegisterServerEvent('t1ger_deliveries:sellCompany')
-AddEventHandler('t1ger_deliveries:sellCompany', function(id, val, amount)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    MySQL.Async.execute('DELETE FROM t1ger_deliveries WHERE id = @id', {['@id'] = id}) 
-    if Config.BuyWithBank then xPlayer.addAccountMoney('bank', amount) else xPlayer.addMoney(amount) end
-	xPlayer.setJob('unemployed', 0)
-end)
-
--- Event to update selected tow service:
-RegisterServerEvent('t1ger_deliveries:updateCompany')
-AddEventHandler('t1ger_deliveries:updateCompany', function(num, val, state, name)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if state ~= nil then 
-        -- add/remove service to/from table:
-        if state then 
-			deliveryCompanies[num] = { identifier = xPlayer.identifier, id = num, name = name, level = 0, certificate = false }
-			Config.Companies[num].data = data
-        else
-			for i = 1, #deliveryCompanies do
-				if deliveryCompanies[i].id == num then
-					deliveryCompanies[i] = nil
-					Config.Companies[num].data = nil
-					break
-				end
-			end
-        end
-        Config.Companies[num].owned = state
-    else
-        if name ~= nil then 
-            for k,v in pairs(deliveryCompanies) do
-                if v.id == num then
-                    v.name = name
-                    MySQL.Async.execute('UPDATE t1ger_deliveries SET name = @name WHERE id = @id', {
-                        ['@name'] = name,
-                        ['@id'] = num
-                    })
-                    break
-                end
-            end
+        if company then
+            companyState[id] = {
+                owned = true,
+                data = {
+                    id = id,
+                    citizenid = row.citizenid,
+                    name = row.name,
+                    level = tonumber(row.level) or 0,
+                    certificate = row.certificate == 1 or row.certificate == true
+                }
+            }
         end
     end
-    TriggerClientEvent('t1ger_deliveries:syncServices', -1, deliveryCompanies, Config.Companies)
-end)
+end
 
--- Purchase Certificate:
-ESX.RegisterServerCallback('t1ger_deliveries:buyCertifcate',function(source, cb, id)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	local money = 0
-	if Config.BuyWithBank then money = xPlayer.getAccount('bank').money else money = xPlayer.getMoney() end
-	if money >= Config.CertificatePrice then
-		if Config.BuyWithBank then xPlayer.removeAccountMoney('bank', Config.CertificatePrice) else xPlayer.removeMoney(Config.CertificatePrice) end
-		MySQL.Async.execute('UPDATE t1ger_deliveries SET certificate = @certificate WHERE id = @id', {
-			['@certificate'] = true,
-			['@id'] = id
-		})
-        cb(true)
-	else
-        cb(false)
-	end
-end)
+local function getOwnedCompanyId(citizenid)
+    for id, state in pairs(companyState) do
+        if state.owned and state.data and state.data.citizenid == citizenid then
+            return id
+        end
+    end
 
-ESX.RegisterServerCallback('t1ger_deliveries:payVehicleDeposit',function(source, cb, amount)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	local money = 0
-	if Config.DepositInBank then money = xPlayer.getAccount('bank').money else money = xPlayer.getMoney() end
-    if money >= amount then
-		if Config.DepositInBank then xPlayer.removeAccountMoney('bank', amount) else xPlayer.removeMoney(amount) end
-        cb(true)
-    else
-        cb(false)
+    return 0
+end
+
+local function getAssignedCompanyId(jobName)
+    for id, company in pairs(Config.Companies) do
+        if company.jobName == jobName then
+            return id
+        end
+    end
+
+    return 0
+end
+
+local function sendCompanyState(src)
+    local player = QBCore.Functions.GetPlayer(src)
+
+    if not player then
+        return
+    end
+
+    local citizenid = player.PlayerData.citizenid
+    local jobName = player.PlayerData.job and player.PlayerData.job.name or nil
+
+    TriggerClientEvent('t1ger_deliveries:client:syncCompanies', src, companyState, getOwnedCompanyId(citizenid), getAssignedCompanyId(jobName))
+end
+
+AddEventHandler('onResourceStart', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+
+    loadCompanies()
+
+    for _, playerId in ipairs(QBCore.Functions.GetPlayers()) do
+        sendCompanyState(playerId)
     end
 end)
 
-RegisterServerEvent('t1ger_deliveries:retrievePaycheck')
-AddEventHandler('t1ger_deliveries:retrievePaycheck', function(paycheck, vehDeposit, giveDeposit, id, val)
-	local xPlayer = ESX.GetPlayerFromId(source)
-    if giveDeposit then
-        xPlayer.addMoney(vehDeposit)
-        TriggerClientEvent('t1ger_deliveries:notify', xPlayer.source, (Lang['deposit_returned']:format(vehDeposit)))
+RegisterNetEvent('QBCore:Server:PlayerLoaded', function(playerId)
+    sendCompanyState(playerId)
+end)
+
+RegisterNetEvent('QBCore:Server:OnJobUpdate', function(src)
+    sendCompanyState(src)
+end)
+
+RegisterNetEvent('QBCore:Server:PlayerDropped', function(src)
+    activeDeliveries[src] = nil
+end)
+
+lib.callback.register('t1ger_deliveries:server:initialize', function(source)
+    local player = QBCore.Functions.GetPlayer(source)
+
+    if not player then
+        return companyState, 0, 0
     end
-	-- add paycheck money to society account:
-	TriggerEvent('esx_society:getSociety', xPlayer.job.name, function (society)
-        TriggerEvent('esx_addonaccount:getSharedAccount', society.account, function(account)
-            account.addMoney(paycheck)
-        end)
+
+    local citizenid = player.PlayerData.citizenid
+    local jobName = player.PlayerData.job and player.PlayerData.job.name or nil
+
+    return companyState, getOwnedCompanyId(citizenid), getAssignedCompanyId(jobName)
+end)
+
+local function playerOwnsCompany(player, companyId)
+    local state = companyState[companyId]
+
+    return state and state.owned and state.data and state.data.citizenid == player.PlayerData.citizenid
+end
+
+lib.callback.register('t1ger_deliveries:server:purchaseCompany', function(source, companyId, name)
+    local player = QBCore.Functions.GetPlayer(source)
+    local company = Config.Companies[companyId]
+
+    if not player or not company or not name or name == '' then
+        return false
+    end
+
+    if companyState[companyId] and companyState[companyId].owned then
+        return false
+    end
+
+    if getOwnedCompanyId(player.PlayerData.citizenid) ~= 0 then
+        return false
+    end
+
+    local account = Config.BuyWithBank and 'bank' or 'cash'
+    local balance = player.PlayerData.money[account] or 0
+
+    if balance < company.price then
+        return false
+    end
+
+    player.Functions.RemoveMoney(account, company.price, 't1ger-deliveries-purchase')
+
+    local data = {
+        id = companyId,
+        citizenid = player.PlayerData.citizenid,
+        name = name,
+        level = 0,
+        certificate = false
+    }
+
+    companyState[companyId] = { owned = true, data = data }
+
+    MySQL.insert.await('REPLACE INTO t1ger_deliveries (id, citizenid, name, level, certificate) VALUES (?, ?, ?, ?, ?)', {
+        companyId,
+        data.citizenid,
+        data.name,
+        data.level,
+        data.certificate and 1 or 0
+    })
+
+    player.Functions.SetJob(company.jobName, Config.JobBossGrade or 4)
+
+    TriggerClientEvent('t1ger_deliveries:client:updateCompany', -1, companyId, data)
+
+    return true
+end)
+
+RegisterNetEvent('t1ger_deliveries:server:renameCompany', function(companyId, name)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+
+    if not player or not name or name == '' then
+        return
+    end
+
+    if not playerOwnsCompany(player, companyId) then
+        return
+    end
+
+    local state = companyState[companyId]
+    state.data.name = name
+
+    MySQL.update.await('UPDATE t1ger_deliveries SET name = ? WHERE id = ?', { name, companyId })
+
+    TriggerClientEvent('t1ger_deliveries:client:updateCompany', -1, companyId, state.data)
+end)
+
+RegisterNetEvent('t1ger_deliveries:server:sellCompany', function(companyId)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    local company = Config.Companies[companyId]
+    local state = companyState[companyId]
+
+    if not player or not company or not state or not state.owned then
+        return
+    end
+
+    if not playerOwnsCompany(player, companyId) then
+        return
+    end
+
+    local sellPrice = math.floor(company.price * Config.SalePercentage)
+
+    player.Functions.AddMoney(Config.BuyWithBank and 'bank' or 'cash', sellPrice, 't1ger-deliveries-sell')
+    player.Functions.SetJob('unemployed', 0)
+
+    companyState[companyId] = { owned = false }
+
+    MySQL.query.await('DELETE FROM t1ger_deliveries WHERE id = ?', { companyId })
+
+    TriggerClientEvent('t1ger_deliveries:client:updateCompany', -1, companyId, nil)
+end)
+
+lib.callback.register('t1ger_deliveries:server:buyCertificate', function(source, companyId)
+    local player = QBCore.Functions.GetPlayer(source)
+    local state = companyState[companyId]
+
+    if not player or not state or not state.owned then
+        return false
+    end
+
+    if not playerOwnsCompany(player, companyId) then
+        return false
+    end
+
+    if state.data.certificate then
+        return true
+    end
+
+    local account = Config.BuyWithBank and 'bank' or 'cash'
+    local balance = player.PlayerData.money[account] or 0
+
+    if balance < Config.CertificatePrice then
+        return false
+    end
+
+    player.Functions.RemoveMoney(account, Config.CertificatePrice, 't1ger-deliveries-certificate')
+
+    state.data.certificate = true
+
+    MySQL.update.await('UPDATE t1ger_deliveries SET certificate = ? WHERE id = ?', { 1, companyId })
+
+    TriggerClientEvent('t1ger_deliveries:client:updateCompany', -1, companyId, state.data)
+
+    return true
+end)
+
+local function getVehicleData(tier, model)
+    for _, vehicle in ipairs(tier.vehicles or {}) do
+        if string.lower(vehicle.model) == string.lower(model) then
+            return vehicle
+        end
+    end
+end
+
+lib.callback.register('t1ger_deliveries:server:startDelivery', function(source, payload)
+    local player = QBCore.Functions.GetPlayer(source)
+
+    if not player then
+        return nil
+    end
+
+    local companyId = payload.companyId
+    local tierId = payload.tier
+    local vehicleModel = payload.vehicle
+
+    local companyConfig = Config.Companies[companyId]
+    local state = companyState[companyId]
+    local tier = Config.JobValues[tierId]
+
+    if not companyConfig or not tier or not state or not state.owned then
+        return nil
+    end
+
+    local isOwner = playerOwnsCompany(player, companyId)
+    local hasJob = player.PlayerData.job and player.PlayerData.job.name == companyConfig.jobName
+
+    if not isOwner and not hasJob then
+        return nil
+    end
+
+    if activeDeliveries[source] then
+        return nil
+    end
+
+    if tier.certificate and not state.data.certificate then
+        return nil
+    end
+
+    if (state.data.level or 0) < (tier.level or 0) then
+        return nil
+    end
+
+    if not SharedUtils.IsVehicleAllowed(companyId, vehicleModel) then
+        return nil
+    end
+
+    local vehicleData = getVehicleData(tier, vehicleModel)
+    if not vehicleData then
+        return nil
+    end
+
+    local route = SharedUtils.GetCachedValue(routeCache, string.format('%s:%s', companyId, tierId), Config.RouteCacheTTL, function()
+        local available = companyConfig.deliveries and companyConfig.deliveries[tierId] or nil
+
+        if not available or #available == 0 then
+            return nil
+        end
+
+        local index = math.random(#available)
+        return SharedUtils.DeepCopy(available[index])
     end)
-    TriggerClientEvent('t1ger_deliveries:notify', xPlayer.source, (Lang['paycheck_received']:format(paycheck)))
 
-	local newLevel = val.data.level + Config.AddLevelAmount
-	MySQL.Async.execute('UPDATE t1ger_deliveries SET level = @level WHERE id = @id', {
-		['@level'] = newLevel,
-		['@id'] = id
-	})
-	Config.Companies[id].data.level = newLevel
-	TriggerClientEvent('t1ger_deliveries:updateCompanyDataCL', -1, id, Config.Companies[id].data)
+    if not route then
+        return nil
+    end
+
+    local deposit = vehicleData.deposit or 0
+
+    if deposit > 0 then
+        local account = Config.DepositInBank and 'bank' or 'cash'
+        local balance = player.PlayerData.money[account] or 0
+
+        if balance < deposit then
+            return nil
+        end
+
+        player.Functions.RemoveMoney(account, deposit, 't1ger-deliveries-deposit')
+        TriggerClientEvent('t1ger_deliveries:client:depositUpdate', source, 'paid', deposit)
+    end
+
+    local payout = 0
+    if tier.payout then
+        local base = tier.payout.base or 0
+        local perStop = tier.payout.perStop or 0
+        payout = base + (#route * perStop)
+    end
+
+    activeDeliveries[source] = {
+        companyId = companyId,
+        tier = tierId,
+        vehicle = string.lower(vehicleModel),
+        route = SharedUtils.DeepCopy(route),
+        progress = {},
+        deposit = deposit,
+        payout = payout
+    }
+
+    return {
+        companyId = companyId,
+        tier = tierId,
+        vehicle = string.lower(vehicleModel),
+        route = route,
+        payout = payout,
+        deposit = deposit
+    }
 end)
 
--- Orders from T1GER_Shops
-ESX.RegisterServerCallback('t1ger_deliveries:getShopOrders',function(source, cb)
-	local orders = exports['t1ger_shops']:GetShopOrders()
-    cb(orders)
+lib.callback.register('t1ger_deliveries:server:advanceDelivery', function(source, payload)
+    local job = activeDeliveries[source]
+
+    if not job then
+        return false
+    end
+
+    if job.companyId ~= payload.companyId or job.tier ~= payload.tier then
+        return false
+    end
+
+    if job.progress[payload.index] then
+        return false
+    end
+
+    if string.lower(payload.vehicle or '') ~= job.vehicle then
+        return false
+    end
+
+    local expected = job.route[payload.index]
+
+    if not expected or not SharedUtils.VectorEquals(expected, payload.coords, Config.CoordinateTolerance or 4.0) then
+        return false
+    end
+
+    job.progress[payload.index] = true
+
+    if payload.index >= #job.route then
+        local player = QBCore.Functions.GetPlayer(source)
+
+        if player then
+            if job.payout > 0 then
+                player.Functions.AddMoney('bank', job.payout, 't1ger-deliveries-payment')
+            end
+
+            if job.deposit and job.deposit > 0 then
+                local account = Config.DepositInBank and 'bank' or 'cash'
+                player.Functions.AddMoney(account, job.deposit, 't1ger-deliveries-deposit-return')
+                TriggerClientEvent('t1ger_deliveries:client:depositUpdate', source, 'returned', job.deposit)
+            end
+        end
+
+        local state = companyState[job.companyId]
+        if state and state.data then
+            state.data.level = (state.data.level or 0) + (Config.AddLevelAmount or 1)
+            MySQL.update.await('UPDATE t1ger_deliveries SET level = ? WHERE id = ?', { state.data.level, job.companyId })
+            TriggerClientEvent('t1ger_deliveries:client:updateCompany', -1, job.companyId, state.data)
+        end
+
+        activeDeliveries[source] = nil
+    end
+
+    return true
 end)
 
--- Event to update taken state for shop orders
-RegisterServerEvent('t1ger_deliveries:updateOrderState')
-AddEventHandler('t1ger_deliveries:updateOrderState', function(data, state)
-	exports['t1ger_shops']:UpdateOrderTakenStatus(data.id, data.shopID, state)
+RegisterNetEvent('t1ger_deliveries:server:cancelDelivery', function()
+    local src = source
+    local job = activeDeliveries[src]
+
+    if not job then
+        return
+    end
+
+    local player = QBCore.Functions.GetPlayer(src)
+
+    if player and job.deposit and job.deposit > 0 then
+        local account = Config.DepositInBank and 'bank' or 'cash'
+        player.Functions.AddMoney(account, job.deposit, 't1ger-deliveries-deposit-cancel')
+        TriggerClientEvent('t1ger_deliveries:client:depositUpdate', src, 'returned', job.deposit)
+    end
+
+    activeDeliveries[src] = nil
 end)
 
--- Event to complete shop order delivery
-RegisterServerEvent('t1ger_deliveries:orderDeliveryDone')
-AddEventHandler('t1ger_deliveries:orderDeliveryDone', function(data)
-	exports['t1ger_shops']:AddShopOrder(data)
+RegisterNetEvent('t1ger_deliveries:server:timeoutDelivery', function()
+    local src = source
+    local job = activeDeliveries[src]
+    activeDeliveries[src] = nil
+    TriggerClientEvent('t1ger_deliveries:client:deliveryTimeout', src)
 
+    if job and job.deposit and job.deposit > 0 then
+        TriggerClientEvent('t1ger_deliveries:client:depositUpdate', src, 'withheld', job.deposit)
+    end
 end)
-
--- Callback to get inventory item:
-ESX.RegisterServerCallback('t1ger_deliveries:getInventoryItem',function(source, cb, item, amount)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	local invItem = xPlayer.getInventoryItem(item)
-	if invItem ~= nil then
-		if invItem.count >= amount then
-			cb(true, invItem)
-		else
-			cb(false, invItem)
-		end 
-	else
-		return print("^1[ITEM ERROR] - ["..string.upper(item).."] DOES NOT EXIST IN DATABASE!^0")
-	end
-end)
-
--- Event to remove inventory item:
-RegisterServerEvent('t1ger_deliveries:removeItem')
-AddEventHandler('t1ger_deliveries:removeItem', function(item, count)
-	local xPlayer = ESX.GetPlayerFromId(source)
-	xPlayer.removeInventoryItem(item, count)
-end)
-
--- Callback to check if is owner:
-ESX.RegisterServerCallback('t1ger_deliveries:hasCompany',function(source, cb)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	MySQL.Async.fetchAll('SELECT * FROM t1ger_deliveries', {}, function(results)
-		if next(results) then
-			for i = 1, #results do
-				if results[i].identifier == xPlayer.identifier then
-					xPlayer.setJob(Config.Society[Config.Companies[results[i].id].society].name, 1)
-					cb(true)
-					break
-				else
-					if i == #results then
-						cb(false)
-					end
-				end
-				Citizen.Wait(2)
-			end
-		end
-	end)
-end)
-
--- Callback to get society vehicles:
-ESX.RegisterServerCallback('t1ger_deliveries:getSocietyVehicles',function(source, cb, job_name)
-    local xPlayer = ESX.GetPlayerFromId(source)
-	MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = @job_name', {['@job_name'] = job_name}, function(results)
-		cb(results)
-	end)
-end)
-

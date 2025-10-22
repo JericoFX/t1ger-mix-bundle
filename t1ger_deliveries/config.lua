@@ -1,68 +1,135 @@
-Config = {}
+-------------------------------------
+------- Created by T1GER#9080 -------
+------------------------------------- 
 
-Config.Debug = false
-Config.RouteCacheTTL = 10 * 60 * 1000 -- cache delivery routes for 10 minutes
-Config.RouteTimeout = 25 * 60 -- seconds before an active delivery expires
-Config.CoordinateTolerance = 4.0
+Config = {
+        Debug = true, -- allows you to restart script while in-game, otherwise u need to restart fivem.
+    ProgressBars = true, -- set to false if you do not use progressBars or using your own
+        T1GER_Keys = true, -- true/false whether you own or not own t1ger-keys
+        T1GER_Shops = true, -- true/false whether you own or not own t1ger-shops
+        BuyWithBank = true, -- buy company with bank money, false = cash.
+        SalePercentage = 0.75, --
+        CertificatePrice = 15000, -- Set price to purchase certificate
+        DepositInBank = true, -- set to false to pay vehicle deposit with cash money
+        DamagePercent = 5, -- if job veh body health is decreased more than 5%, then no payout for that specific delivery.
+        DepositDamage = 10, -- if vehicle is damaged more than x %, then deposit is not returned.
+        AddLevelAmount = 2, -- Set amount of levels added upon completing a job
 
-Config.BuyWithBank = true
-Config.SalePercentage = 0.75
-Config.CertificatePrice = 15000
-Config.DepositInBank = true
-Config.DamagePercent = 5
-Config.DepositDamage = 10
-Config.AddLevelAmount = 2
-Config.JobBossGrade = 4
+        SocietyVehicleStorage = {
+                table = 'player_vehicles',
+                jobColumn = 'job',
+                propsColumn = 'mods',
+                stateColumn = 'state',
+                availableState = 1
+        }
+}
 
 Config.Companies = {
-    [1] = {
-        id = 1,
-        name = 'Davis Deliveries',
-        price = 125000,
-        jobName = 'delivery1',
-        menu = vector3(-456.95, -2753.43, 6.0),
-        spawn = vector4(-447.78, -2752.48, 6.0, 44.5),
-        trailerSpawn = vector4(-455.47, -2732.51, 6.0, 225.12),
-        forklift = { model = 'forklift', pos = vector4(-460.56, -2744.66, 6.0, 48.77) },
-        deliveries = {
-            low = {
-                { vector3(-424.58, -2789.02, 5.0), vector3(-401.26, -2707.57, 5.0), vector3(-354.62, -2783.85, 6.0) },
-                { vector3(-472.41, -2693.13, 6.0), vector3(-490.63, -2666.89, 6.0), vector3(-513.62, -2636.47, 6.0) }
-            },
-            medium = {
-                { vector3(-325.74, -2698.24, 6.0), vector3(-299.88, -2649.52, 6.0), vector3(-315.51, -2598.91, 6.0) },
-                { vector3(-348.32, -2483.75, 6.3), vector3(-341.21, -2400.63, 6.3), vector3(-332.58, -2324.25, 6.3) }
-            },
-            high = {
-                { vector3(-229.12, -2406.85, 6.3), vector3(-150.61, -2150.72, 16.7), vector3(-84.42, -2087.13, 16.9) },
-                { vector3(25.67, -2016.52, 18.0), vector3(117.04, -1985.37, 18.3), vector3(164.58, -1892.64, 23.0) }
-            }
-        }
-    },
-    [2] = {
-        id = 2,
-        name = 'La Puerta Logistics',
-        price = 115000,
-        jobName = 'delivery2',
-        menu = vector3(-297.55, -2599.26, 6.2),
-        spawn = vector4(-304.61, -2599.87, 6.0, 136.67),
-        trailerSpawn = vector4(-319.42, -2603.78, 6.0, 136.49),
-        forklift = { model = 'forklift', pos = vector4(-297.82, -2593.84, 6.0, 45.55) },
-        deliveries = {
-            low = {
-                { vector3(-269.11, -2519.61, 6.0), vector3(-233.67, -2460.11, 6.0), vector3(-191.45, -2431.64, 6.0) },
-                { vector3(-217.13, -2404.32, 6.0), vector3(-185.52, -2362.42, 6.0), vector3(-151.82, -2315.72, 6.0) }
-            },
-            medium = {
-                { vector3(-117.81, -2242.59, 7.0), vector3(-73.45, -2180.13, 8.0), vector3(-17.82, -2136.21, 8.0) },
-                { vector3(8.65, -2064.71, 17.5), vector3(58.77, -2005.24, 17.5), vector3(87.16, -1947.61, 20.0) }
-            },
-            high = {
-                { vector3(147.57, -1875.13, 24.0), vector3(195.47, -1788.12, 28.9), vector3(231.18, -1712.46, 29.6) },
-                { vector3(270.85, -1645.63, 29.6), vector3(316.87, -1567.42, 29.3), vector3(356.96, -1498.23, 29.3) }
-            }
-        }
-    }
+	[1] = {
+		society = 'delivery1', -- this must match an identifier name inside Config.Society!
+		price = 125000, -- price of the company.
+		owned = false, -- do not touch this!
+		menu = vector3(-456.95,-2753.43,6.0), -- menu pos
+		spawn = vector4(-447.78,-2752.48,6.0,44.5), -- pos for veh spawn
+		trailerSpawn = vector4(-455.47,-2732.51,6.0,225.12), -- pos to spawn trailer
+
+		refill = {
+			pos = vector3(-461.94,-2744.51,6.0), -- refill pos
+			marker = {dist = 10.0, type = 27, scale = {x=3.0,y=3.0,z=1.0}, color = {r=220,g=60,b=60,a=100}}, -- refill marker
+		},
+
+		cargo = {
+			pos = {
+				[1] = vector3(-463.09,-2748.91,6.0),
+				[2] = vector3(-465.1,-2747.12,6.0),
+				[3] = vector3(-465.09,-2751.86,6.0),
+				[4] = vector3(-467.06,-2749.3,6.0),
+				[5] = vector3(-467.04,-2746.15,6.0),
+			},
+			marker = {dist = 15.0, type = 20, scale = {x=0.3,y=0.3,z=0.3}, color = {r=220,g=60,b=60,a=100}}, -- cargo marker
+		},
+
+		forklift = {
+			model = 'forklift', -- forklift model
+			pos = vector4(-460.56,-2744.66,6.0,48.77),
+		},
+	},
+	[2] = {
+		society = 'delivery2', -- this must match an identifier name inside Config.Society!
+		price = 115000, -- price of the company.
+		owned = false, -- do not touch this!
+		menu = vector3(-297.55,-2599.26,6.2), -- menu pos
+		spawn = vector4(-304.61,-2599.87,6.0,136.67), -- pos for veh spawn
+		trailerSpawn = vector4(-319.42,-2603.78,6.0,136.49), -- pos to spawn trailer
+
+		refill = {
+			pos = vector3(-288.16,-2593.52,6.0), -- refill pos
+			marker = {dist = 10.0, type = 27, scale = {x=3.0,y=3.0,z=1.0}, color = {r=220,g=60,b=60,a=100}}, -- refill marker
+		},
+
+		cargo = {
+			pos = {
+				[1] = vector3(-288.17,-2599.62,6.0),
+				[2] = vector3(-290.12,-2601.57,6.03),
+				[3] = vector3(-291.68,-2603.45,6.03),
+				[4] = vector3(-290.6,-2597.05,6.0),
+				[5] = vector3(-292.67,-2594.93,6.0),
+			},
+			marker = {dist = 15.0, type = 20, scale = {x=0.3,y=0.3,z=0.3}, color = {r=220,g=60,b=60,a=100}}, -- cargo marker
+		},
+
+		forklift = {
+			model = 'forklift', -- forklift model
+			pos = vector4(-297.82,-2593.84,6.0,45.55),
+		},
+	},
+}
+
+-- Blip Settings:
+Config.BlipSettings = {
+	['company'] = { enable = true, sprite = 477, display = 4, scale = 0.60, color = 0, name = "Delivery Company" },
+}
+-- Marker Settings:
+Config.MarkerSettings = {
+	['menu'] = { enable = true, type = 20, scale = {x = 0.7, y = 0.7, z = 0.7}, color = {r = 240, g = 52, b = 52, a = 100} },
+	['delivery'] = { enable = true, type = 2, scale = {x = 0.35, y = 0.35, z = 0.35}, color = {r = 220, g = 60, b = 60, a = 100} },
+}
+
+Config.Society = { -- configure qb-management access for each delivery company
+	['delivery1'] = {
+		-- register society:
+		name = 'delivery1', -- job name 
+		label = 'Delivery Job', -- job label
+                account = 'society_delivery1', -- society account
+                datastore = 'society_delivery1', -- society datastore
+                inventory = 'society_delivery1', -- society inventory
+                boss_grade = 1, -- boss grade number to apply upon purchase
+                bossMenuEvent = 'qb-bossmenu:client:OpenMenu', -- event to open boss menu
+                data = {type = 'private'},
+		-- settings:
+		withdraw  = true, -- boss can withdraw money from account
+		deposit   = true, -- boss can deposit money into account
+		wash      = false, -- boss can wash money
+		employees = true, -- boss can manage & recruit employees
+		grades    = false -- boss can adjust all salaries for each job grade
+	},
+	['delivery2']  = {
+		-- register society:
+		name = 'delivery2', -- job name 
+		label = 'Delivery Job', -- job label
+                account = 'society_delivery2', -- society account
+                datastore = 'society_delivery2', -- society datastore
+                inventory = 'society_delivery2', -- society inventory
+                boss_grade = 1, -- boss grade number to apply upon purchase
+                bossMenuEvent = 'qb-bossmenu:client:OpenMenu', -- event to open boss menu
+		data = {type = 'private'},
+		-- settings:
+		withdraw  = true, -- boss can withdraw money from account
+		deposit   = true, -- boss can deposit money into account
+		wash      = false, -- boss can wash money
+		employees = true, -- boss can manage & recruit employees
+		grades    = false -- boss can adjust all salaries for each job grade
+	},
 }
 
 Config.JobValues = {

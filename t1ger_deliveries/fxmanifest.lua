@@ -13,6 +13,8 @@ shared_scripts {
     'shared/utils.lua'
 }
 
+shared_script '@ox_lib/init.lua'
+
 client_scripts {
     'client/utils.lua',
     'client/main.lua'

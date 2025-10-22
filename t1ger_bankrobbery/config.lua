@@ -7,8 +7,10 @@ Config = {
     ProgressBars = true, -- set to false if you do not use progressBars or using your own
 	PoliceJobs = {"police", "lspd"}, -- Jobs that can't do bankrobberies etc, but can secure the banks.
 	FetchJobs = 60, -- timer in seconds to fetch online players from each dealership jobs
-	CashInDirty = true, -- safe rewards in dirty (black_money) or normal cash?
-	AlertBlip = { Show = true, Time = 20, Radius = 50.0, Alpha = 250, Color = 3 }
+        CashInDirty = true, -- safe rewards in dirty (black_money) or normal cash?
+        DirtyMoneyItem = 'markedbills', -- item used when CashInDirty is true (set to nil to pay in cash)
+        DirtyMoneyMetadataKey = 'worth', -- metadata key used to store payout amount on dirty money items
+        AlertBlip = { Show = true, Time = 20, Radius = 50.0, Alpha = 250, Color = 3 }
 }
 
 Config.Banks = {

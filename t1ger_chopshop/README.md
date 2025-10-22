@@ -3,14 +3,12 @@
 ## SHOWCASE:
 https://youtu.be/-C_GjQQeRM8
 
-## CFX FORUM POST:
-https://forum.cfx.re/t/esx-t1ger-chop-shop/4765265/
-
 ## FRAMEWORK:
-- [ESX Legacy](https://github.com/esx-framework/esx_core)
+- [QBCore Framework](https://github.com/qbcore-framework/qb-core)
 
 ## DEPENCENCIES:
-- [progressBars (OPTIONAL)](https://gitlab.com/t1ger-scripts/t1ger-requirements/-/tree/main/progressBars)
+- [ox_lib](https://github.com/overextended/ox_lib)
+- [oxmysql](https://github.com/overextended/oxmysql)
 
 ## INSTALLATION:
 1. Drag & drop the folder into your `resources` server folder.

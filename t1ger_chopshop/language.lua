@@ -37,6 +37,7 @@ Lang = {
 	['too_far_from_veh']        = 'You went too far away from the vehicle, maybe someone stole it?',
 	['deliver_veh_msg']         = 'Scrap the vehicle at the chop shop.',
 	['job_complete']           	= 'Good job! Come see me again if you want to earn more cash',
+        ['lockpick_failed']          = 'You failed to lockpick the vehicle.',
 	['reward_msg']         		= 'You received ~r~$%s~s~ in cash for the delivery',
 	['cancel_job']         		= 'You cancelled the job, everything deleted.',
 	['job_cooldown']			= 'Another ~y~job~s~ is ~g~available~s~ for you in: ~b~%s~s~ minutes.',

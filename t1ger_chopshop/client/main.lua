@@ -1,151 +1,228 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
-player = nil
-coords = {}
-local curVehicle = nil 
-local driver = nil
+local QBCore = exports[Config.CoreResource]:GetCoreObject()
 
-Citizen.CreateThread(function()
-    while true do
-		player = GetPlayerPed(-1)
-		coords = GetEntityCoords(player)
-        curVehicle = GetVehiclePedIsIn(player, false)
-        driver = GetPedInVehicleSeat(curVehicle, -1)
-        Citizen.Wait(500)
+local curVehicle
+local driver
+
+local TEXT_UI_ID = 't1ger_chopshop_prompt'
+local activePrompt
+
+local function setPromptText(text)
+    if text and text ~= activePrompt then
+        lib.showTextUI(text, { id = TEXT_UI_ID })
+        activePrompt = text
+    elseif not text and activePrompt then
+        lib.hideTextUI()
+        activePrompt = nil
+    end
+end
+
+lib.onCache('vehicle', function(vehicle)
+    curVehicle = vehicle
+    if vehicle and vehicle ~= 0 then
+        driver = GetPedInVehicleSeat(vehicle, -1)
+    else
+        driver = nil
     end
 end)
+
 
 local scrap_list 	= {}
 local job_NPC 		= nil
 local shop_blip 	= nil
 local gotCarList	= false
 local scrap_NPC		= nil
+local jobPoint
+local scrapPoint
+local jobInteractionBusy = false
+local activeContextFinish
+
+local function finishInteraction()
+    if activeContextFinish then
+        activeContextFinish()
+        activeContextFinish = nil
+    end
+end
+
+local function handleContextClose(id)
+    if id == 'chopshop_main_menu' or id == 'chopshop_select_risk_grade' then
+        finishInteraction()
+        jobInteractionBusy = false
+    end
+end
+
+RegisterNetEvent('ox_lib:contextClosed', handleContextClose)
+RegisterNetEvent('ox:context:close', handleContextClose)
 
 -- Event to initialize chop shop:
 RegisterNetEvent('t1ger_chopshop:intializeChopShop')
 AddEventHandler('t1ger_chopshop:intializeChopShop', function(scrapList)
     scrap_list = scrapList
-	-- Reset NPC:
-    if job_NPC ~= nil then DeleteEntity(job_NPC); Citizen.Wait(250) end
 
-	-- Create NPC:
-	local cfg = Config.ChopShop.JobNPC
-	LoadModel(cfg.model)
-	job_NPC = CreatePed(7, GetHashKey(cfg.model), cfg.pos[1], cfg.pos[2], cfg.pos[3]-0.97, cfg.pos[4], 0, true, true)
-	FreezeEntityPosition(job_NPC,true)
-	SetBlockingOfNonTemporaryEvents(job_NPC, true)
-	TaskStartScenarioInPlace(job_NPC, cfg.scenario, 0, false)
-	SetEntityInvincible(job_NPC, true)
-	SetEntityAsMissionEntity(job_NPC)
+    if job_NPC then
+        DeleteEntity(job_NPC)
+        Wait(250)
+    end
 
-	-- Create Chop Shop Blip:
-	local mk = Config.ChopShop.Blip
-	if DoesBlipExist(shop_blip) then RemoveBlip(shop_blip) end
-	if mk.enable then
-		Citizen.CreateThread(function()
-			shop_blip = AddBlipForCoord(cfg.pos[1], cfg.pos[2], cfg.pos[3])
-			SetBlipSprite (shop_blip, mk.sprite)
-			SetBlipDisplay(shop_blip, mk.display)
-			SetBlipScale  (shop_blip, mk.scale)
-			SetBlipColour (shop_blip, mk.color)
-			SetBlipAsShortRange(shop_blip, true)
-			BeginTextCommandSetBlipName("STRING")
-			AddTextComponentString(mk.label)
-			EndTextCommandSetBlipName(shop_blip)
-		end)
-	end
+    local cfg = Config.ChopShop.JobNPC
+    LoadModel(cfg.model)
+    job_NPC = CreatePed(7, GetHashKey(cfg.model), cfg.pos[1], cfg.pos[2], cfg.pos[3] - 0.97, cfg.pos[4], false, true)
+    FreezeEntityPosition(job_NPC, true)
+    SetBlockingOfNonTemporaryEvents(job_NPC, true)
+    TaskStartScenarioInPlace(job_NPC, cfg.scenario, 0, false)
+    SetEntityInvincible(job_NPC, true)
+    SetEntityAsMissionEntity(job_NPC)
 
-	gotCarList = false
+    if jobPoint then
+        jobPoint:remove()
+        jobPoint = nil
+    end
+
+    jobPoint = lib.points.new({
+        coords = vec3(cfg.pos[1], cfg.pos[2], cfg.pos[3]),
+        distance = 20.0,
+        onExit = function()
+            setPromptText(nil)
+            jobInteractionBusy = false
+        end,
+        nearby = function(self)
+            if not DoesEntityExist(job_NPC) then
+                return
+            end
+
+            if self.currentDistance <= 2.0 then
+                if jobInteractionBusy then
+                    return
+                end
+
+                setPromptText(Lang['press_to_talk'])
+
+                if self.currentDistance <= 1.5 and IsControlJustPressed(0, Config.ChopShop.JobNPC.keybind) then
+                    jobInteractionBusy = true
+                    setPromptText(nil)
+                    ChopShopMainMenu(function()
+                        jobInteractionBusy = false
+                    end)
+                end
+            elseif not jobInteractionBusy then
+                setPromptText(nil)
+            end
+        end
+    })
+
+    local mk = Config.ChopShop.Blip
+    if DoesBlipExist(shop_blip) then
+        RemoveBlip(shop_blip)
+    end
+
+    if mk.enable then
+        shop_blip = AddBlipForCoord(cfg.pos[1], cfg.pos[2], cfg.pos[3])
+        SetBlipSprite(shop_blip, mk.sprite)
+        SetBlipDisplay(shop_blip, mk.display)
+        SetBlipScale(shop_blip, mk.scale)
+        SetBlipColour(shop_blip, mk.color)
+        SetBlipAsShortRange(shop_blip, true)
+        BeginTextCommandSetBlipName('STRING')
+        AddTextComponentString(mk.label)
+        EndTextCommandSetBlipName(shop_blip)
+    end
+
+    gotCarList = false
 end)
 
--- Thread to interact with Job NPC:
-local interacting = false
-Citizen.CreateThread(function()
-    while true do
-		Citizen.Wait(1)
-		local sleep = true 
-		if DoesEntityExist(job_NPC) then
-			local NPC_coords = GetEntityCoords(job_NPC)
-			local distance = GetDistanceBetweenCoords(coords, NPC_coords.x, NPC_coords.y, NPC_coords.z, false)
-			if distance < 2.0 and not interacting then
-				sleep = false 
-				DrawText3Ds(NPC_coords.x, NPC_coords.y, NPC_coords.z, Lang['press_to_talk'])
-				if IsControlJustPressed(0, Config.ChopShop.JobNPC.keybind) then
-					ChopShopMainMenu()
-				end
-			end
-			if distance > 2.0 and interacting then
-				ESX.UI.Menu.CloseAll()
-				interacting = false
-			end
-		end
-		if sleep then Citizen.Wait(1000) end
-	end	
-end)
+
+-- Interaction handled via ox_lib points
+
 
 -- Function to talk with NPC:
-function ChopShopMainMenu()
-	interacting = true
-	TalkWithNPC()
-	local elements = {
-		{label = Lang['menu_scrap_list'], value = 'scraplist'},
-		{label = Lang['menu_thief_jobs'], value = 'thiefjob'}
-	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'chopshop_main_menu',
-		{
-			title    = 'Chop Shop',
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
+function ChopShopMainMenu(onFinish)
+    if not TalkWithNPC() then
+        if onFinish then
+            onFinish()
+        end
+        return
+    end
 
-		if not Config.ChopShop.Police.allowCops and isCop then
-			ESX.UI.Menu.CloseAll()
-			interacting = false
-			return ShowNotifyESX(Lang['police_not_allowed'])
-		end
+    activeContextFinish = onFinish
 
-		if data.current.value == 'scraplist' then
-			menu.close()
-			ESX.TriggerServerCallback('t1ger_chopshop:getCopsCount', function(cops) 
-				if cops >= Config.ChopShop.Police.minCops then
-					ESX.TriggerServerCallback('t1ger_chopshop:hasCooldown', function(cooldown)
-						if not cooldown then 
-							RetrieveCarList()
-						end
-					end, 'scrap')
-				else
-					ShowNotifyESX(Lang['not_enough_cops'])
-				end
-			end)
+    lib.registerContext({
+        id = 'chopshop_main_menu',
+        title = 'Chop Shop',
+        options = {
+            {
+                title = Lang['menu_scrap_list'],
+                onSelect = function()
+                    if not Config.ChopShop.Police.allowCops and isCop then
+                        ShowNotifyESX(Lang['police_not_allowed'], 'error')
+                        finishInteraction()
+                        return
+                    end
 
-		elseif data.current.value == 'thiefjob' then
-			ESX.TriggerServerCallback('t1ger_chopshop:hasCooldown', function(cooldown)
-				if not cooldown then 
-					CarThiefMainMenu()
-				end
-			end, 'thief')
-		end
+                    QBCore.Functions.TriggerCallback('t1ger_chopshop:getCopsCount', function(cops)
+                        if cops >= Config.ChopShop.Police.minCops then
+                            QBCore.Functions.TriggerCallback('t1ger_chopshop:hasCooldown', function(cooldown)
+                                if not cooldown then
+                                    RetrieveCarList()
+                                end
+                                finishInteraction()
+                            end, 'scrap')
+                        else
+                            ShowNotifyESX(Lang['not_enough_cops'], 'error')
+                            finishInteraction()
+                        end
+                    end)
+                end
+            },
+            {
+                title = Lang['menu_thief_jobs'],
+                onSelect = function()
+                    if not Config.ChopShop.Police.allowCops and isCop then
+                        ShowNotifyESX(Lang['police_not_allowed'], 'error')
+                        finishInteraction()
+                        return
+                    end
 
-	end, function(data, menu)
-		menu.close()
-		interacting = false
-	end)
+                    QBCore.Functions.TriggerCallback('t1ger_chopshop:hasCooldown', function(cooldown)
+                        if not cooldown then
+                            CarThiefMainMenu(onFinish)
+                        else
+                            finishInteraction()
+                        end
+                    end, 'thief')
+                end
+            }
+        }
+    })
+
+    lib.showContext('chopshop_main_menu')
 end
 
 -- Play Interaction Animation:
 function TalkWithNPC()
-	local cfg = Config.ChopShop.JobNPC
-	LoadAnim(cfg.anim.dict)
-	FreezeEntityPosition(player, true)
-	TaskPlayAnim(player, cfg.anim.dict, cfg.anim.lib, 1.0, 0.5, -1, 31, 1.0, 0, 0)
-	if Config.ProgressBars then 
-		exports['progressBars']:startUI((cfg.anim.time), Lang['progbar_talking'])
-	end
-	Citizen.Wait(cfg.anim.time)
-	ClearPedTasks(player)
-	FreezeEntityPosition(player, false)
+    local cfg = Config.ChopShop.JobNPC
+    LoadAnim(cfg.anim.dict)
+    FreezeEntityPosition(player, true)
+    TaskPlayAnim(player, cfg.anim.dict, cfg.anim.lib, 1.0, 0.5, -1, 31, 1.0, 0, 0)
+
+    local success = true
+    if Config.ProgressBars then
+        success = lib.progressBar({
+            duration = cfg.anim.time,
+            label = Lang['progbar_talking'],
+            useWhileDead = false,
+            canCancel = true,
+            disable = { move = true, car = true, combat = true }
+        })
+    else
+        Wait(cfg.anim.time)
+    end
+
+    ClearPedTasks(player)
+    FreezeEntityPosition(player, false)
+
+    return success ~= false
 end
 
 -- Function to Retrieve Car List:
@@ -167,32 +244,33 @@ function RetrieveCarList()
 			TriggerEvent('chat:addMessage', { args = {Lang['still_same_list_2']:format(table.concat(carNames, ", "))}})
 		end
 	end
-	interacting = false
 end
 
 -- Function for car thief main menu:
-function CarThiefMainMenu()
-	local elements = {}
-	for k,v in pairs(Config.RiskGrades) do
-		if v.enable then
-			local list_label = ('%s <span style="color:MediumSeaGreen;">[ $%s ]</span>'):format(v.label,v.job_fees)
-			table.insert(elements, {label = list_label, name = v.label, value = v.grade, enable = v.enable, job_fees = v.job_fees, cops = v.cops, vehicles = v.vehicles})
-		end
-	end
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'chopshop_select_risk_grade',
-		{
-			title    = 'Select Risk Grade',
-			align    = 'center',
-			elements = elements
-		},
-	function(data, menu)
-		local selected = data.current
-		TriggerServerEvent('t1ger_chopshop:selectRiskGrade', selected.name, selected.value, selected.job_fees, selected.cops, selected.vehicles)
-		ESX.UI.Menu.CloseAll()
-		interacting = false
-	end, function(data, menu)
-		menu.close()
-	end)
+function CarThiefMainMenu(onFinish)
+    activeContextFinish = onFinish
+
+    local options = {}
+    for _, v in pairs(Config.RiskGrades) do
+        if v.enable then
+            local list_label = ('%s [ $%s ]'):format(v.label, v.job_fees)
+            options[#options + 1] = {
+                title = list_label,
+                onSelect = function()
+                    TriggerServerEvent('t1ger_chopshop:selectRiskGrade', v.grade)
+                    finishInteraction()
+                end
+            }
+        end
+    end
+
+    lib.registerContext({
+        id = 'chopshop_select_risk_grade',
+        title = Lang['menu_thief_jobs'],
+        options = options
+    })
+
+    lib.showContext('chopshop_select_risk_grade')
 end
 
 -- Event to browse through available locations:
@@ -371,16 +449,36 @@ function LockpickJobVehicle(job)
 	TaskPlayAnim(player, anim_dict, anim_lib, 3.0, 1.0, -1, 31, 0, 0, 0)
 	-- Car Alarm:
 	if Config.ChopShop.Settings.thiefjob.alarm then
-		SetVehicleAlarm(job_veh, true)
-		SetVehicleAlarmTimeLeft(job_veh, (25 * 1000))
-		StartVehicleAlarm(job_veh)
-	end
-	if Config.ProgressBars then 
-		exports['progressBars']:startUI((5 * 1000), Lang['progbar_lockpick'])
-	end
-	Citizen.Wait(5 * 1000)
-	ClearPedTasks(player)
-	FreezeEntityPosition(player, false)
+                SetVehicleAlarm(job_veh, true)
+                SetVehicleAlarmTimeLeft(job_veh, (25 * 1000))
+                StartVehicleAlarm(job_veh)
+        end
+        if Config.ProgressBars then
+                local progress = lib.progressCircle({
+                    duration = 5000,
+                    label = Lang['progbar_lockpick'],
+                    useWhileDead = false,
+                    canCancel = true,
+                    position = 'bottom',
+                    disable = { move = true, car = true, combat = true }
+                })
+                if not progress then
+                        ClearPedTasks(player)
+                        FreezeEntityPosition(player, false)
+                        return
+                end
+        else
+                Citizen.Wait(5000)
+        end
+        local skillPassed = lib.skillCheck({'easy', 'medium', 'medium'})
+        if not skillPassed then
+                ClearPedTasks(player)
+                FreezeEntityPosition(player, false)
+                ShowNotifyESX(Lang['lockpick_failed'], 'error')
+                return
+        end
+        ClearPedTasks(player)
+        FreezeEntityPosition(player, false)
 	veh_lockpicked = true
 	SetVehicleDoorsLockedForAllPlayers(job_veh, false)
 	local number = Config.ChopShop.JobNPC.name
@@ -464,65 +562,83 @@ AddEventHandler('t1ger_chopshop:syncDataCL',function(data)
     Config.ThiefJobs = data
 end)
 
--- Thread to scrap vehicle:
-Citizen.CreateThread(function()
-	while true do
-		Citizen.Wait(1)
-		local sleep = true
-		local scrapCFG = Config.ChopShop.ScrapNPC
-		local mk = scrapCFG.marker
-		local distance = GetDistanceBetweenCoords(coords, scrapCFG.pos.veh[1], scrapCFG.pos.veh[2], scrapCFG.pos.veh[3], true)
-		-- close to chop shop:
-		if distance < mk.drawDist then
-			local carHash = GetEntityModel(curVehicle)
-			if isInsideScrapCar(carHash) or (isInsideThiefJobCar(carHash) and veh_lockpicked) then
-				sleep = false
-				-- Draw Marker: 
-				if distance > 2.0 then
-					DrawMarker(mk.type, scrapCFG.pos.veh[1], scrapCFG.pos.veh[2], scrapCFG.pos.veh[3], 0.0, 0.0, 0.0, 180.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2, false, false, false, false)
-				end
-				-- Create Scrap NPC:
-				if scrap_NPC == nil then
-					LoadModel(scrapCFG.model)
-					scrap_NPC = CreatePed(4, scrapCFG.model, scrapCFG.pos.start[1], scrapCFG.pos.start[2], scrapCFG.pos.start[3]-0.975, scrapCFG.pos.start[4], false)
-					FreezeEntityPosition(scrap_NPC, true)
-					SetEntityInvincible(scrap_NPC, true)
-					SetBlockingOfNonTemporaryEvents(scrap_NPC, true)
-					TaskStartScenarioInPlace(scrap_NPC, scrapCFG.scenario.idle, 0, false)
-				end
-				-- Inspect Scrap Vehicle:
-				if distance < 2.0 and not scrappingCar then
-					DrawText3Ds(scrapCFG.pos.veh[1], scrapCFG.pos.veh[2], scrapCFG.pos.veh[3], Lang['press_to_scrap'])
-					if IsControlJustPressed(0, scrapCFG.keybind) then
-						InspectScrapVehicle()
-					end
-				end
-			end
-		end
-		-- Delete Scrap NPC:
-		if distance > mk.drawDist and scrap_NPC ~= nil then
-			DeleteEntity(scrap_NPC)
-			scrap_NPC = nil
-		end
-		-- Scrap the vehicle & get rewards:
-		if carInspected and not carScrapped then
-			local npc_coords = GetEntityCoords(scrap_NPC)
-			local npc_dist = GetDistanceBetweenCoords(coords.x, coords.y, coords.z, npc_coords.x, npc_coords.y, npc_coords.z, false)
-			if npc_dist < 6.0 then
-				sleep = false 
-				DrawText3Ds(npc_coords.x, npc_coords.y, npc_coords.z, Lang['press_to_receive_cash'])
-				if IsControlJustPressed(0, scrapCFG.keybind) then
-					if npc_dist <= 2.0 then
-						ScrapVehicle()
-					else
-						ShowNotifyESX(Lang['move_closer_interact'])
-					end
-				end
-			end
-		end
-		if sleep then Citizen.Wait(1000) end
-	end
-end)
+local function ensureScrapPoint()
+    if scrapPoint then
+        scrapPoint:remove()
+    end
+
+    local scrapCFG = Config.ChopShop.ScrapNPC
+    local mk = scrapCFG.marker
+
+    scrapPoint = lib.points.new({
+        coords = vec3(scrapCFG.pos.veh[1], scrapCFG.pos.veh[2], scrapCFG.pos.veh[3]),
+        distance = mk.drawDist,
+        onExit = function()
+            setPromptText(nil)
+            if scrap_NPC then
+                DeleteEntity(scrap_NPC)
+                scrap_NPC = nil
+            end
+        end,
+        nearby = function(self)
+            local displayText
+            local vehicle = curVehicle
+            local carHash = vehicle and vehicle ~= 0 and GetEntityModel(vehicle) or 0
+
+            if not (isInsideScrapCar(carHash) or (isInsideThiefJobCar(carHash) and veh_lockpicked)) then
+                if scrap_NPC then
+                    DeleteEntity(scrap_NPC)
+                    scrap_NPC = nil
+                end
+                setPromptText(nil)
+                return
+            end
+
+            if self.currentDistance > 2.0 then
+                DrawMarker(mk.type, scrapCFG.pos.veh[1], scrapCFG.pos.veh[2], scrapCFG.pos.veh[3], 0.0, 0.0, 0.0, 180.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2, false, nil, nil, false)
+            end
+
+            if not scrap_NPC then
+                LoadModel(scrapCFG.model)
+                scrap_NPC = CreatePed(4, scrapCFG.model, scrapCFG.pos.start[1], scrapCFG.pos.start[2], scrapCFG.pos.start[3] - 0.975, scrapCFG.pos.start[4], false, true)
+                FreezeEntityPosition(scrap_NPC, true)
+                SetEntityInvincible(scrap_NPC, true)
+                SetBlockingOfNonTemporaryEvents(scrap_NPC, true)
+                TaskStartScenarioInPlace(scrap_NPC, scrapCFG.scenario.idle, 0, false)
+            end
+
+            if carInspected and not carScrapped and scrap_NPC then
+                local npc_coords = GetEntityCoords(scrap_NPC)
+                local playerCoords = coords or GetEntityCoords(player)
+                local npc_dist = #(playerCoords - npc_coords)
+
+                if npc_dist < 6.0 then
+                    displayText = Lang['press_to_receive_cash']
+                    if npc_dist <= 2.0 then
+                        if IsControlJustPressed(0, scrapCFG.keybind) then
+                            ScrapVehicle()
+                            return
+                        end
+                    else
+                        DrawText3Ds(npc_coords.x, npc_coords.y, npc_coords.z, Lang['press_to_receive_cash'])
+                    end
+                end
+            elseif not scrappingCar then
+                if self.currentDistance <= 2.0 then
+                    displayText = Lang['press_to_scrap']
+                    if IsControlJustPressed(0, scrapCFG.keybind) then
+                        InspectScrapVehicle()
+                    end
+                end
+            end
+
+            setPromptText(displayText)
+        end
+    })
+end
+
+ensureScrapPoint()
+
 
 -- Function to scrap vehicle & reward:
 function ScrapVehicle()
@@ -536,7 +652,7 @@ function ScrapVehicle()
 		-- (Delete Owned Vehicle):
 		local plate = GetVehicleNumberPlateText(scrap_vehicle):gsub("^%s*(.-)%s*$", "%1")
 		if Config.ChopShop.Settings.ownedVehicles.delete then
-			ESX.TriggerServerCallback('t1ger_chopshop:isVehicleOwned', function(owned)
+			QBCore.Functions.TriggerCallback('t1ger_chopshop:isVehicleOwned', function(owned)
 				if owned then
 					TriggerServerEvent('t1ger_chopshop:deleteOwnedVehicle', plate)
 				end
@@ -544,7 +660,7 @@ function ScrapVehicle()
 		end
 		-- reward:
 		local data = GetScrapVehicleDetails(GetEntityModel(scrap_vehicle))
-		TriggerServerEvent('t1ger_chopshop:getPayment', data, round(GetEntityHealth(scrap_vehicle)/10, 0))
+		TriggerServerEvent('t1ger_chopshop:getPayment', data, round(GetEntityHealth(scrap_vehicle)/10, 0), plate)
 		if Config.ChopShop.Settings.usePhoneMSG then
 			JobNotifyMSG(Lang['car_delivered_1'], scrapCFG.name)
 		else
@@ -567,6 +683,7 @@ function ScrapVehicle()
 	curVehicle = nil
 	scrap_NPC = nil
 	carScrapped	= false
+        setPromptText(nil)
 end
 
 -- Function to inspect vehicle:
@@ -642,7 +759,7 @@ function CanScrapVehicle(plate)
 	if Config.ChopShop.Settings.ownedVehicles.scrap then
 		canScrapVeh = true 
 	else
-		ESX.TriggerServerCallback('t1ger_chopshop:isVehicleOwned', function(owned)
+		QBCore.Functions.TriggerCallback('t1ger_chopshop:isVehicleOwned', function(owned)
 			if owned then canScrapVeh = false else canScrapVeh = true end
 		end, plate)
 	end
@@ -660,15 +777,15 @@ function GetScrapVehicleDetails(hashkey)
     end
 end
 
-AddEventHandler('esx:onPlayerDeath', function(data)
-	end_thiefJob = true
+AddEventHandler('baseevents:onPlayerDied', function()
+    end_thiefJob = true
 end)
 
-AddEventHandler('playerSpawned', function(spawn)
-	isDead = false
+AddEventHandler('baseevents:onPlayerKilled', function()
+    end_thiefJob = true
 end)
 
 RegisterCommand('carthief_cancel', function(source, args)
-	end_thiefJob = true
-	ShowNotifyESX(Lang['cancel_job'])
+    end_thiefJob = true
+    ShowNotifyESX(Lang['cancel_job'])
 end, false)

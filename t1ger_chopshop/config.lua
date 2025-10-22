@@ -5,17 +5,22 @@
 Config = {}
 
 -- General Settings:
-Config.ESXSHAREDOBJECT 		= 'esx:getSharedObject'		-- put your sharedobject in here.
-Config.ItemWeightSystem		= false						-- Set this to true if you are using weight instead of limit.
-Config.ProgressBars			= true						-- set to false to disable my progressBars and add your own in the script.
-Config.HasItemLabel			= true						-- set to false if your ESX doesn't support item labels.
+Config.CoreResource = 'qb-core'
+Config.ProgressBars = true
+Config.BlackMoney = {
+        item = nil,
+        metadata = function(amount)
+                return { worth = amount }
+        end,
+        account = 'cash'
+}
 
 Config.ChopShop = {
 
 	Settings = {
 		carListAmount = 3,				-- Adjust amount of cars on the list. 3 cars are default.
 		newCarListTimer = 30,			-- time in minutes until a new car list is generated.
-		usePhoneMSG = true,				-- Enable to receive job msg through phone, disable to use ESX.ShowNotification or anything else you'd like
+		usePhoneMSG = true,				-- Enable to receive job messages through phone, disable to use in-game notifications instead
 		ownedVehicles = {
 			scrap = true,					-- Enable / disable scrapping owned vehicles
 			delete = true					-- Enable/disable deleting owned vehicles (if t1ger-insurance = true and veh got insurance, then veh will be sent to impound)

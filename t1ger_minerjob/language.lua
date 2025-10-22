@@ -19,7 +19,7 @@ Lang = {
         ['not_enough_stone']        = 'You need ~y~10x stone~s~ to start the ~b~washing~s~ process.',
         ['player_too_close']        = 'You are too close to another player.',
         ['not_enough_washed_stone'] = 'You need ~b~10x washed stone~s~ to start the ~y~smelting~s~ process.',
-        ['smelt_reward']            = 'You smeleted and received ~b~%sx~s~ ~y~%s~s~.',
+        ['smelt_reward']            = 'You smelted and received ~b~%sx~s~ ~y~%s~s~.',
         ['inventory_full']          = 'You cannot carry any more of that item.',
 
         -- PROGRESS BARS

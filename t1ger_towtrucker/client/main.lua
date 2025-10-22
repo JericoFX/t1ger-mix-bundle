@@ -1,18 +1,155 @@
 -------------------------------------
 ------- Created by T1GER#9080 -------
-------------------------------------- 
+-------------------------------------
 
-local player, coords, ply_veh = nil, {}, nil
-Citizen.CreateThread(function()
-    while true do
-        player = PlayerPedId()
-        coords = GetEntityCoords(player)
-		if IsPedInAnyVehicle(player, false) then
-			ply_veh = GetVehiclePedIsIn(player, false)
-		end
-        Citizen.Wait(500)
-    end
+local QBCore = exports['qb-core']:GetCoreObject()
+local Menu = {}
+local activeMenu
+local function toVector3(position)
+if type(position) == 'vector3' or type(position) == 'vector4' then
+return position
+end
+if type(position) == 'table' then
+return vec3(position.x or position[1], position.y or position[2], position.z or position[3])
+end
+return position
+end
+
+local Game = {}
+
+function Game.SpawnVehicle(model, coords, heading, cb)
+QBCore.Functions.SpawnVehicle(model, function(vehicle)
+if heading then SetEntityHeading(vehicle, heading) end
+if cb then cb(vehicle) end
+end, toVector3(coords), true)
+end
+
+function Game.SpawnObject(model, coords, cb)
+local modelHash = type(model) == 'number' and model or joaat(model)
+CreateThread(function()
+RequestModel(modelHash)
+while not HasModelLoaded(modelHash) do Wait(50) end
+local obj = CreateObject(modelHash, coords.x, coords.y, coords.z, true, true, false)
+if cb then cb(obj) end
 end)
+end
+
+function Game.GetVehicleProperties(vehicle)
+return QBCore.Functions.GetVehicleProperties(vehicle)
+end
+
+function Game.SetVehicleProperties(vehicle, props)
+QBCore.Functions.SetVehicleProperties(vehicle, props)
+end
+
+function Game.DeleteVehicle(vehicle)
+QBCore.Functions.DeleteVehicle(vehicle)
+end
+
+function Game.GetClosestPlayer()
+return QBCore.Functions.GetClosestPlayer()
+end
+
+function Menu.CloseAll()
+activeMenu = nil
+lib.hideContext()
+end
+
+function Menu.Open(menuType, resource, name, data, onSelect, onCancel)
+if menuType == 'dialog' then
+local dialogTitle = data.title or 'Input'
+local inputs = data.inputs or {
+{ type = 'input', label = dialogTitle, required = data.required ~= false }
+}
+local response = lib.inputDialog(dialogTitle, inputs)
+local dialogMenu = { close = function() end }
+if response then
+if onSelect then onSelect({ value = response[1] }, dialogMenu) end
+elseif onCancel then
+onCancel({}, dialogMenu)
+end
+return
+end
+
+local options = {}
+for _, element in ipairs(data.elements or {}) do
+local option = {
+title = element.label or element.title or 'Item',
+description = element.desc or element.description,
+icon = element.icon,
+iconColor = element.iconColor,
+disabled = element.disabled or false,
+metadata = element.metadata
+}
+option.onSelect = function()
+local contextMenu = {
+close = function()
+lib.hideContext()
+if activeMenu == name then activeMenu = nil end
+end
+}
+if onSelect then onSelect({ current = element }, contextMenu) end
+end
+table.insert(options, option)
+end
+
+lib.registerContext({
+id = name,
+title = data.title or 'Menu',
+options = options,
+onExit = function()
+if activeMenu == name then activeMenu = nil end
+if onCancel then onCancel({}, { close = function() end }) end
+end
+})
+activeMenu = name
+lib.showContext(name)
+end
+
+local cache = {
+    ped = PlayerPedId(),
+    coords = GetEntityCoords(PlayerPedId()),
+    vehicle = 0
+}
+
+local player, coords = cache.ped, cache.coords
+
+lib.onCache('ped', function(value)
+    cache.ped = value or PlayerPedId()
+    player = cache.ped
+end)
+
+lib.onCache('coords', function(value)
+    cache.coords = value or GetEntityCoords(cache.ped)
+    coords = cache.coords
+end)
+
+lib.onCache('vehicle', function(value)
+    cache.vehicle = value or 0
+end)
+
+local function PlayerPed()
+    return cache.ped or PlayerPedId()
+end
+
+local function PlayerCoords()
+    return cache.coords or GetEntityCoords(PlayerPed())
+end
+
+local function PlayerVehicle()
+    local vehicle = cache.vehicle
+    if vehicle and vehicle ~= 0 then
+        return vehicle
+    end
+
+    if IsPedInAnyVehicle(PlayerPed(), false) then
+        vehicle = GetVehiclePedIsIn(PlayerPed(), false)
+        cache.vehicle = vehicle
+        return vehicle
+    end
+
+    return nil
+end
 
 local towServices = {}
 local towBlips = {}
@@ -22,19 +159,21 @@ local towID = 0
 RegisterNetEvent('t1ger_towtrucker:loadTowServices')
 AddEventHandler('t1ger_towtrucker:loadTowServices', function(results, cfg, num, id)
 	Config.TowServices = cfg
-	towServices = results
-	isOwner = num
-	TriggerEvent('t1ger_towtrucker:setTowID', id)
-	Citizen.Wait(200)
-	UpdateTowServiceBlips()
+        towServices = results
+        isOwner = num
+        TriggerEvent('t1ger_towtrucker:setTowID', id)
+        Wait(200)
+        UpdateTowServiceBlips()
+        RefreshTowServicePoints()
 end)
 
 RegisterNetEvent('t1ger_towtrucker:syncTowServices')
 AddEventHandler('t1ger_towtrucker:syncTowServices', function(results, cfg)
-	Config.TowServices = cfg
-	towServices = results
-	Citizen.Wait(200)
-	UpdateTowServiceBlips()
+        Config.TowServices = cfg
+        towServices = results
+        Wait(200)
+        UpdateTowServiceBlips()
+        RefreshTowServicePoints()
 end)
 
 RegisterNetEvent('t1ger_towtrucker:setTowID')
@@ -74,68 +213,222 @@ end
 
 -- ## BOSS / MANAGE ## --
 
-local bossMenu = nil
-Citizen.CreateThread(function()
-    while true do 
-        Citizen.Wait(1)
-		local sleep = true 
-		for k,v in pairs(Config.TowServices) do
-			local bossDistance = #(coords - v.boss_pos)
-			if bossDistance < 6.0 then
-				sleep = false
-				if bossMenu ~= nil then
-					bossDistance = #(coords - bossMenu.boss_pos)
-					while bossMenu ~= nil and bossDistance > 1.5 do
-						bossMenu = nil
-						Citizen.Wait(1)
-					end
-					if bossMenu == nil then
-						ESX.UI.Menu.CloseAll()
-					end
-				else
-					local mk = Config.MarkerSettings['boss']
-					if bossDistance >= 2.0 then
-						if mk.enable then
-							DrawMarker(mk.type, v.boss_pos.x, v.boss_pos.y, v.boss_pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
-						end
-					elseif bossDistance < 2.0 then
-						if v.owned == true then
-							if (T1GER_isJob(Config.Society[v.society].name)) or (isOwner == k) then
-								T1GER_DrawTxt(v.boss_pos.x, v.boss_pos.y, v.boss_pos.z, Lang['draw_service_menu'])
-								if IsControlJustPressed(0, Config.KeyControls['service_menu']) then
-									bossMenu = v
-									OpenTowServiceMenu(k,v)
-								end
-							else
-								T1GER_DrawTxt(v.boss_pos.x, v.boss_pos.y, v.boss_pos.z, Lang['draw_service_no_access'])
-							end
-						else
-							if (T1GER_isJob(Config.Society[v.society].name) and PlayerData.job.grade_name ~= 'boss') or (isOwner == 0) then
-								T1GER_DrawTxt(v.boss_pos.x, v.boss_pos.y, v.boss_pos.z, Lang['draw_buy_service']:format(comma_value(math.floor(v.price))))
-								if IsControlJustPressed(0, Config.KeyControls['buy_service']) then
-									bossMenu = v
-									PurchaseTowService(k,v)
-								end
-							else
-								T1GER_DrawTxt(v.boss_pos.x, v.boss_pos.y, v.boss_pos.z, Lang['draw_service_own_one'])
-							end
-						end
-					end
-				end
-			end
-		end
-		if sleep then
-			Citizen.Wait(1000)
-		end
+local bossMenu, impoundMenu, garageMenu = nil, nil, nil
+local currentTextPoint
+local bossPoints, impoundPoints, garagePoints = {}, {}, {}
+
+local function showPointText(point, text)
+    if not text then return end
+
+    if currentTextPoint ~= point or point.__text ~= text then
+        if currentTextPoint and currentTextPoint ~= point and currentTextPoint.__text then
+            lib.hideTextUI()
+            currentTextPoint.__text = nil
+        end
+
+        lib.showTextUI(text)
+        point.__text = text
+        currentTextPoint = point
     end
-end)
+end
+
+local function clearPointText(point)
+    if not point then return end
+
+    if currentTextPoint == point then
+        lib.hideTextUI()
+        currentTextPoint = nil
+    end
+
+    point.__text = nil
+end
+
+local function destroyPoints(store)
+    for id, point in pairs(store) do
+        clearPointText(point)
+        point:remove()
+        store[id] = nil
+    end
+end
+
+local function createBossPoint(id, service)
+    if not service.boss_pos then return end
+
+    local mk = Config.MarkerSettings['boss'] or {}
+    local coords = toVector3(service.boss_pos)
+    bossPoints[id] = lib.points.new({
+        coords = coords,
+        distance = mk.drawDist or 10.0,
+        nearby = function(point)
+            if mk.enable and point.currentDistance <= (mk.drawDist or point.distance) then
+                DrawMarker(mk.type, coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
+            end
+
+            if point.currentDistance > 2.0 then
+                clearPointText(point)
+                return
+            end
+
+            local society = Config.Society[service.society]
+            if not society then
+                clearPointText(point)
+                return
+            end
+
+            local text
+            if service.owned == true then
+                if (T1GER_isJob(society.name)) or (isOwner == id) then
+                    text = Lang['draw_service_menu']
+                    if IsControlJustPressed(0, Config.KeyControls['service_menu']) then
+                        bossMenu = service
+                        OpenTowServiceMenu(id, service)
+                    end
+                else
+                    text = Lang['draw_service_no_access']
+                end
+            else
+                if (T1GER_isJob(society.name) and not T1GER_IsBoss()) or (isOwner == 0) then
+                    text = Lang['draw_buy_service']:format(comma_value(math.floor(service.price)))
+                    if IsControlJustPressed(0, Config.KeyControls['buy_service']) then
+                        bossMenu = service
+                        PurchaseTowService(id, service)
+                    end
+                else
+                    text = Lang['draw_service_own_one']
+                end
+            end
+
+            if text then
+                showPointText(point, text)
+            else
+                clearPointText(point)
+            end
+        end,
+        onExit = function(point)
+            clearPointText(point)
+            if bossMenu then
+                Menu.CloseAll()
+                bossMenu = nil
+            end
+        end
+    })
+end
+
+local function createImpoundPoint(id, service)
+    if not service.impound_pos then return end
+
+    local mk = Config.MarkerSettings['impound'] or {}
+    local coords = toVector3(service.impound_pos)
+    impoundPoints[id] = lib.points.new({
+        coords = coords,
+        distance = mk.drawDist or 10.0,
+        nearby = function(point)
+            if mk.enable and point.currentDistance <= (mk.drawDist or point.distance) then
+                DrawMarker(mk.type, coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
+            end
+
+            if point.currentDistance > 2.0 then
+                clearPointText(point)
+                return
+            end
+
+            local text
+            local society = Config.Society[service.society]
+            if society and service.owned == true and ((T1GER_isJob(society.name)) or (isOwner == id)) then
+                text = Lang['draw_impound_menu']
+                if IsControlJustPressed(0, Config.KeyControls['impound_menu']) then
+                    impoundMenu = service
+                    OpenImpoundMenu(id, service)
+                end
+            end
+
+            if text then
+                showPointText(point, text)
+            else
+                clearPointText(point)
+            end
+        end,
+        onExit = function(point)
+            clearPointText(point)
+            if impoundMenu then
+                Menu.CloseAll()
+                impoundMenu = nil
+            end
+        end
+    })
+end
+
+local function createGaragePoint(id, garageCfg)
+    if not garageCfg or garageCfg.enable ~= true then return end
+
+    local mk = Config.MarkerSettings['garage'] or {}
+    local coords = toVector3(garageCfg.pos)
+    garagePoints[id] = lib.points.new({
+        coords = coords,
+        distance = mk.drawDist or 10.0,
+        nearby = function(point)
+            if mk.enable and point.currentDistance <= (mk.drawDist or point.distance) then
+                DrawMarker(mk.type, coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
+            end
+
+            if point.currentDistance > 2.0 then
+                clearPointText(point)
+                return
+            end
+
+            local service = Config.TowServices[id]
+            if not service or service.owned ~= true then
+                clearPointText(point)
+                return
+            end
+
+            local society = Config.Society[service.society]
+            if society and ((T1GER_isJob(society.name)) or (isOwner == id)) then
+                local vehicle = PlayerVehicle()
+                local text = vehicle and Lang['draw_store_del_veh'] or Lang['draw_garage_menu']
+                showPointText(point, text)
+
+                if IsControlJustPressed(0, Config.KeyControls['garage_menu']) then
+                    garageMenu = garageCfg
+                    OpenGarageMenu(id, garageCfg)
+                end
+            else
+                showPointText(point, Lang['draw_service_no_access'])
+            end
+        end,
+        onExit = function(point)
+            clearPointText(point)
+            if garageMenu then
+                Menu.CloseAll()
+                garageMenu = nil
+            end
+        end
+    })
+end
+
+local function RefreshTowServicePoints()
+    destroyPoints(bossPoints)
+    destroyPoints(impoundPoints)
+    destroyPoints(garagePoints)
+
+    Menu.CloseAll()
+    bossMenu, impoundMenu, garageMenu = nil, nil, nil
+
+    for id, service in pairs(Config.TowServices) do
+        createBossPoint(id, service)
+        createImpoundPoint(id, service)
+        createGaragePoint(id, Config.TowServiceGarage[id])
+    end
+end
+
+RefreshTowServicePoints()
 
 function PurchaseTowService(id,val)
 	local elements = {
 		{ label = 'No', value = 'decline_purchase' },
 		{ label = 'Yes', value = 'confirm_purchase' },
 	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_service_purchase_confirmation',
+	Menu.Open('default', GetCurrentResourceName(), 'tow_service_purchase_confirmation',
 		{
 			title    = 'Confirm | Price: $'..comma_value(math.floor(val.price)),
 			align    = 'center',
@@ -143,7 +436,7 @@ function PurchaseTowService(id,val)
 		},
 	function(data, menu)
 		if data.current.value ~= 'decline_purchase' then
-			ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'enter_service_name', {
+			Menu.Open('dialog', GetCurrentResourceName(), 'enter_service_name', {
 				title = 'Enter Tow Service Name'
 			}, function(data2, menu2)
 				local name = tostring(data2.value)
@@ -151,7 +444,7 @@ function PurchaseTowService(id,val)
 					TriggerEvent('t1ger_towtrucker:notify', Lang['invalid_string'])
 				else
 					menu2.close()
-					ESX.TriggerServerCallback('t1ger_towtrucker:buyTowService', function(purchased)
+					QBCore.Functions.TriggerCallback('t1ger_towtrucker:buyTowService', function(purchased)
 						if purchased then
 							TriggerEvent('t1ger_towtrucker:notify', (Lang['service_purchased']):format(comma_value(math.floor(val.price))))
 							isOwner = id
@@ -175,15 +468,15 @@ function PurchaseTowService(id,val)
 end
 
 function OpenTowServiceMenu(id,val)
-	ESX.UI.Menu.CloseAll()
-	local elements = {}
-	if (T1GER_isJob(Config.Society[val.society].name) and PlayerData.job.grade_name == 'boss') or isOwner == id then
+Menu.CloseAll()
+local elements = {}
+if (T1GER_isJob(Config.Society[val.society].name) and T1GER_IsBoss()) or isOwner == id then
 		table.insert(elements, {label = 'Rename Tow Service', value = 'rename_tow_service'})
 		table.insert(elements, {label = 'Sell Tow Service', value = 'sell_tow_service'})
 		table.insert(elements, {label = 'Boss Menu', value = 'boss_menu'})
 	end
 	if #elements > 0 then 
-		ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_service_main',
+		Menu.Open('default', GetCurrentResourceName(), 'tow_service_main',
 			{
 				title    = 'Tow Service ['..tostring(id)..']',
 				align    = 'center',
@@ -209,8 +502,8 @@ function OpenTowServiceMenu(id,val)
 end
 
 function RenameTowService(id,val)
-	ESX.UI.Menu.CloseAll()
-	ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'rename_tow_service', {
+	Menu.CloseAll()
+	Menu.Open('dialog', GetCurrentResourceName(), 'rename_tow_service', {
 		title = 'Enter Tow Service Name'
 	}, function(data, menu)
 		local name = tostring(data.value)
@@ -235,7 +528,7 @@ function SellTowService(id,val)
 		{ label = 'No', value = 'decline_sale' },
 		{ label = 'Yes', value = 'confirm_sale' },
 	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_service_sell_confirmation',
+	Menu.Open('default', GetCurrentResourceName(), 'tow_service_sell_confirmation',
 		{
 			title    = 'Confirm Sale | Price: $'..comma_value(math.floor(sellPrice)),
 			align    = 'center',
@@ -243,7 +536,7 @@ function SellTowService(id,val)
 		},
 	function(data, menu)
 		if data.current.value == 'confirm_sale' then
-			ESX.UI.Menu.CloseAll()
+			Menu.CloseAll()
 			TriggerServerEvent('t1ger_towtrucker:sellTowService', id, val, math.floor(sellPrice))
 			TriggerServerEvent('t1ger_towtrucker:updateTowServices', id, val, false, nil)
 			isOwner = 0
@@ -260,87 +553,42 @@ function SellTowService(id,val)
 end
 
 function BossMenu(id,val)
-	local cfg = Config.Society[val.society]
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'boss_main_menu',
-		{
-			title    = cfg.label,
-			align    = 'center',
-			elements = {
-				{ label = 'Boss Actions', value = 'boss_actions', job = cfg.name },
-				{ label = 'Account Balance', value = 'get_balance', job = cfg.name}
-			}
-		},
-	function(data, menu)
-		if data.current.value == 'boss_actions' then
-			TriggerEvent('esx_society:openBossMenu', data.current.job, function(data, menu)
-				menu.close()
-			end, {withdraw = cfg.withdraw, deposit = cfg.deposit, wash = cfg.wash, employees = cfg.employees, grades = cfg.grades})
-		elseif data.current.value == 'get_balance' then
-			ESX.TriggerServerCallback('esx_society:getSocietyMoney', function(amount)
-				TriggerEvent('t1ger_towtrucker:notify', Lang['get_account_balance']:format(comma_value(amount)))
-			end, data.current.job)
-		end
-	end, function(data, menu)
-		menu.close()
-		OpenTowServiceMenu(id,val)
-	end)
+    local cfg = Config.Society[val.society]
+    Menu.Open('default', GetCurrentResourceName(), 'boss_main_menu',
+        {
+            title    = cfg.label,
+            align    = 'center',
+            elements = {
+                { label = 'Boss Actions', value = 'boss_actions', job = cfg.name },
+                { label = 'Account Balance', value = 'get_balance', job = cfg.name}
+            }
+        },
+    function(data, menu)
+        if data.current.value == 'boss_actions' then
+            menu.close()
+            TriggerEvent('qb-bossmenu:client:OpenMenu', data.current.job)
+        elseif data.current.value == 'get_balance' then
+            QBCore.Functions.TriggerCallback('t1ger_towtrucker:getSocietyFunds', function(amount)
+                TriggerEvent('t1ger_towtrucker:notify', Lang['get_account_balance']:format(comma_value(amount or 0)))
+            end, data.current.job)
+        end
+    end, function(data, menu)
+        menu.close()
+        OpenTowServiceMenu(id,val)
+    end)
 end
 
 -- ## IMPOUND ## --
 
-local impoundMenu = nil
-Citizen.CreateThread(function()
-    while true do 
-        Citizen.Wait(1)
-		local sleep = true 
-		for k,v in pairs(Config.TowServices) do
-			local impoundDist = #(coords - vector3(v.impound_pos.x, v.impound_pos.y, v.impound_pos.z))
-			if impoundDist < 6.0 then
-				sleep = false
-				if impoundMenu ~= nil then
-					impoundDist = #(coords - vector3(impoundMenu.impound_pos.x, impoundMenu.impound_pos.y, impoundMenu.impound_pos.z))
-					while impoundMenu ~= nil and impoundDist > 1.5 do
-						impoundMenu = nil
-						Citizen.Wait(1)
-					end
-					if impoundMenu == nil then
-						ESX.UI.Menu.CloseAll()
-					end
-				else
-					local mk = Config.MarkerSettings['impound']
-					if impoundDist >= 2.0 then
-						if mk.enable then
-							DrawMarker(mk.type, v.impound_pos.x, v.impound_pos.y, v.impound_pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
-						end
-					elseif impoundDist < 2.0 then
-						if v.owned == true then
-							if (T1GER_isJob(Config.Society[v.society].name)) or (isOwner == k) then
-								T1GER_DrawTxt(v.impound_pos.x, v.impound_pos.y, v.impound_pos.z, Lang['draw_impound_menu'])
-								if IsControlJustPressed(0, Config.KeyControls['impound_menu']) then
-									impoundMenu = v
-									OpenImpoundMenu(k,v)
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-		if sleep then
-			Citizen.Wait(1000)
-		end
-    end
-end)
-
 function OpenImpoundMenu(id,val)
-	ESX.UI.Menu.CloseAll()
+	Menu.CloseAll()
 	local elements = {
 		{ label = 'Impound List', value = 'impound_list' },
 	}
 	if IsPedInAnyVehicle(player, 0) then
 		table.insert(elements, {label = 'Impound Vehicle', value = 'impound_vehicle'})
 	end
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_impound_main',
+	Menu.Open('default', GetCurrentResourceName(), 'tow_impound_main',
 		{
 			title    = 'Impound ['..tostring(id)..']',
 			align    = 'center',
@@ -361,7 +609,7 @@ end
 
 function ImpoundList(id,val)
 	local elements = {}
-	ESX.TriggerServerCallback('t1ger_towtrucker:GetImpoundVehicles', function(impoundList)
+	QBCore.Functions.TriggerCallback('t1ger_towtrucker:GetImpoundVehicles', function(impoundList)
 		if impoundList ~= nil then
 			if next(impoundList) then
 				for k,v in pairs(impoundList) do
@@ -377,8 +625,8 @@ function ImpoundList(id,val)
 					})
 				end
 				if next(elements) then
-					ESX.UI.Menu.CloseAll()
-					ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'impound_veh_list',
+					Menu.CloseAll()
+					Menu.Open('default', GetCurrentResourceName(), 'impound_veh_list',
 						{
 							title    = 'Click to Release Vehicle',
 							align    = 'center',
@@ -386,8 +634,8 @@ function ImpoundList(id,val)
 						},
 					function(data, menu)
 						if data.current.value ~= nil then 
-							ESX.Game.SpawnVehicle(data.current.vehicle.model, {x = val.impound_pos.x, y = val.impound_pos.y, z = (val.impound_pos.z + 1.0)}, val.impound_pos.w, function(impoundVehicle)
-								ESX.Game.SetVehicleProperties(impoundVehicle, data.current.vehicle)
+							Game.SpawnVehicle(data.current.vehicle.model, {x = val.impound_pos.x, y = val.impound_pos.y, z = (val.impound_pos.z + 1.0)}, val.impound_pos.w, function(impoundVehicle)
+								Game.SetVehicleProperties(impoundVehicle, data.current.vehicle)
 								SetVehRadioStation(impoundVehicle, "OFF")
 								TaskWarpPedIntoVehicle(player, impoundVehicle, -1)
 								SetVehicleFuelLevel(impoundVehicle, 100.0)
@@ -396,7 +644,7 @@ function ImpoundList(id,val)
 								end
 							end)
 							TriggerServerEvent('t1ger_towtrucker:releaseImpound', id, data.current.plate, data.current.vehicle, data.current.owner)
-							ESX.UI.Menu.CloseAll()
+							Menu.CloseAll()
 							impoundMenu = nil
 						end
 					end, function(data, menu)
@@ -418,10 +666,10 @@ function ImpoundCurrentVehicle(id,val)
 		{ label = 'Yes', value = 'confirm_impound' },
 	}
 	local vehicle = GetVehiclePedIsIn(player, false)
-	local props = ESX.Game.GetVehicleProperties(vehicle)
+	local props = Game.GetVehicleProperties(vehicle)
 	local plate = tostring(GetVehicleNumberPlateText(vehicle))
-	ESX.UI.Menu.CloseAll()
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_service_impound_confirmation',
+	Menu.CloseAll()
+	Menu.Open('default', GetCurrentResourceName(), 'tow_service_impound_confirmation',
 		{
 			title    = 'Impound Vehicle? ['..plate..']',
 			align    = 'center',
@@ -429,12 +677,12 @@ function ImpoundCurrentVehicle(id,val)
 		},
 	function(data, menu)
 		if data.current.value ~= 'decline_impound' then
-			ESX.TriggerServerCallback('t1ger_towtrucker:impoundVehicle',function(impounded, notify)
+			QBCore.Functions.TriggerCallback('t1ger_towtrucker:impoundVehicle',function(impounded, notify)
 				if impounded then
 					DeleteVehicle(vehicle)
 				end
 				TriggerEvent('t1ger_towtrucker:notify', notify)
-				ESX.UI.Menu.CloseAll()
+				Menu.CloseAll()
 				impoundMenu = nil
 			end, id, plate, props)
 		end
@@ -445,13 +693,13 @@ end
 
 function IsVehicleInTowImpound(plate)
 	local isImpounded, impoundID, name, checked = false, 0, nil, false
-	ESX.TriggerServerCallback('t1ger_towtrucker:isVehicleInTowImpound', function(state, id)
+	QBCore.Functions.TriggerCallback('t1ger_towtrucker:isVehicleInTowImpound', function(state, id)
 		isImpounded = state
 		impoundID = id
 		checked = true
 	end, plate)
 	while not checked do 
-		Citizen.Wait(10)
+		Wait(10)
 	end
 	if towServices[impoundID] ~= nil then
 		name = towServices[impoundID].name
@@ -460,57 +708,6 @@ function IsVehicleInTowImpound(plate)
 end
 
 -- ## GARAGE ## --
-
-local garageMenu = nil
-Citizen.CreateThread(function()
-	Citizen.Wait(2000)
-	while true do 
-		Citizen.Wait(1)
-		local sleep = true 
-		for k,v in pairs(Config.TowServiceGarage) do
-			if v.enable == true then 
-				local garageDist = #(coords - vector3(v.pos.x, v.pos.y, v.pos.z))
-				if garageDist < 6.0 then
-					sleep = false
-					if garageMenu ~= nil then
-						garageDist = #(coords - vector3(garageMenu.pos.x, garageMenu.pos.y, garageMenu.pos.z))
-						while garageMenu ~= nil and garageDist > 1.5 do
-							garageMenu = nil
-							Citizen.Wait(1)
-						end
-						if garageMenu == nil then
-							ESX.UI.Menu.CloseAll()
-						end
-					else
-						local mk = Config.MarkerSettings['garage']
-						if garageDist >= 2.0 then
-							if mk.enable then
-								DrawMarker(mk.type, v.pos.x, v.pos.y, v.pos.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, mk.scale.x, mk.scale.y, mk.scale.z, mk.color.r, mk.color.g, mk.color.b, mk.color.a, false, true, 2)
-							end
-						elseif garageDist < 2.0 then
-							if Config.TowServices[k].owned == true then
-								if (T1GER_isJob(Config.Society[Config.TowServices[k].society].name)) or (isOwner == k) then
-									if IsPedInAnyVehicle(player, true) then 
-										T1GER_DrawTxt(v.pos.x, v.pos.y, v.pos.z, Lang['draw_store_del_veh'])
-									else
-										T1GER_DrawTxt(v.pos.x, v.pos.y, v.pos.z, Lang['draw_garage_menu'])
-									end
-									if IsControlJustPressed(0, Config.KeyControls['garage_menu']) then
-										garageMenu = v
-										OpenGarageMenu(k,v)
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-		if sleep then
-			Citizen.Wait(1000)
-		end
-	end
-end)
 
 function OpenGarageMenu(id,val)
 	local vehicle = GetVehiclePedIsIn(player, false)
@@ -522,16 +719,16 @@ function OpenGarageMenu(id,val)
 	else
 		local elements = {}
 		for k,v in ipairs(val.vehicles) do
-			if PlayerData.job.grade >= v.grade then
+if T1GER_GetJobGrade() >= v.grade then
 				table.insert(elements, {label = v.label, model = v.model})
 			end
 		end
 		if next(elements) == nil then 
 			garageMenu = nil
-			ESX.UI.Menu.CloseAll()
+			Menu.CloseAll()
 			return TriggerEvent('t1ger_towtrucker:notify', 'No job vehicles available.')
 		end
-		ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'tow_job_veh_list',
+		Menu.Open('default', GetCurrentResourceName(), 'tow_job_veh_list',
 			{
 				title    = 'Select Job Vehicle',
 				align    = 'center',
@@ -539,7 +736,7 @@ function OpenGarageMenu(id,val)
 			},
 		function(data, menu)
 			SpawnJobVehicle(val, data.current.model, data.current.label, data.current.jobs)
-			ESX.UI.Menu.CloseAll()
+			Menu.CloseAll()
 			garageMenu = nil
 		end, function(data, menu)
 			menu.close()
@@ -549,7 +746,7 @@ function OpenGarageMenu(id,val)
 end
 
 function SpawnJobVehicle(val, model, name)
-	ESX.Game.SpawnVehicle(model, vector3(val.pos.x,val.pos.y,val.pos.z), val.pos.w, function(vehicle)
+	Game.SpawnVehicle(model, vector3(val.pos.x,val.pos.y,val.pos.z), val.pos.w, function(vehicle)
 		while not DoesEntityExist(vehicle) do
 			Wait(5)
 		end
@@ -572,9 +769,9 @@ function SpawnJobVehicle(val, model, name)
 end
 
 -- ## TOW TRUCKER INTERACTION MENU ## --
-Citizen.CreateThread(function()
+CreateThread(function()
 	while true do
-		Citizen.Wait(1)
+		Wait(1)
 		if IsControlJustPressed(0, Config.KeyControls['interaction_menu']) then
 			if Config.TowServices[towID] ~= nil then
 				if T1GER_isJob(Config.Society[Config.TowServices[towID].society].name) then
@@ -594,7 +791,7 @@ end, false)
 local holdingObj, carryModel = false, 0
 
 function OpenTowTruckerActionMenu()
-	ESX.UI.Menu.CloseAll()
+	Menu.CloseAll()
 	local elements = {
 		{ label = 'Billing', value = 'billing' },
 		{ label = 'Impound Vehicle',  value = 'impound_vehicle' },
@@ -605,7 +802,7 @@ function OpenTowTruckerActionMenu()
 		{ label = 'Prop Emotes',  value = 'prop_emotes'},
 		{ label = 'NPC Jobs', value = 'npc_jobs' },
 	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'towtrucker_action_main_menu',
+	Menu.Open('default', GetCurrentResourceName(), 'towtrucker_action_main_menu',
 		{
 			title    = 'Tow Trucker Menu',
 			align    = 'center',
@@ -645,16 +842,16 @@ function OpenTowTruckerActionMenu()
 end
 
 function Billing()
-	ESX.UI.Menu.CloseAll()
-	ESX.UI.Menu.Open('dialog', GetCurrentResourceName(), 'towtrucker_billing_dialog', {title = 'Invoice Amount' }, function(data, menu)
+	Menu.CloseAll()
+	Menu.Open('dialog', GetCurrentResourceName(), 'towtrucker_billing_dialog', {title = 'Invoice Amount' }, function(data, menu)
 		local amount = tonumber(data.value)
 		if amount then
-			local closestPlayer, closestDistance = ESX.Game.GetClosestPlayer()
+			local closestPlayer, closestDistance = Game.GetClosestPlayer()
 			if closestPlayer == -1 or closestDistance > 3.0 then
 				TriggerEvent('t1ger_towtrucker:notify', Lang['no_players_nearby'])
 			else
 				local cfg = Config.Society[Config.TowServices[towID].society]
-				TriggerServerEvent('esx_billing:sendBill', GetPlayerServerId(closestPlayer), cfg.account, cfg.label, amount)
+				TriggerServerEvent('t1ger_towtrucker:server:issueInvoice', GetPlayerServerId(closestPlayer), cfg.account, cfg.label, amount)
 			end
 		else
 			TriggerEvent('t1ger_towtrucker:notify', Lang['invalid_amount'])
@@ -672,30 +869,30 @@ function ImpoundClosestVehicle()
 	local targetVeh = GetVehicleInDirection(coordA, coordB)
 	local impounded = false
 	if (DoesEntityExist(targetVeh) and IsEntityAVehicle(targetVeh)) then
-		ESX.UI.Menu.CloseAll()
+		Menu.CloseAll()
 		T1GER_GetControlOfEntity(targetVeh)
 		SetEntityAsMissionEntity(targetVeh, true, true)
 		local d1,d2 = GetModelDimensions(GetEntityModel(targetVeh))
 		local impound_pos = GetOffsetFromEntityInWorldCoords(targetVeh, d1.x-0.2,0.0,0.0)
 		while not impounded do 
-			Citizen.Wait(1)
+			Wait(1)
 			local dist = #(coords - vector3(impound_pos.x, impound_pos.y, impound_pos.z))
 			if dist < cfg.drawText.dist then
 				T1GER_DrawTxt(impound_pos.x, impound_pos.y, impound_pos.z, cfg.drawText.str)
 				if IsControlJustPressed(0, cfg.drawText.keybind) then 
 					if dist <= cfg.drawText.interactDist then
 						TaskTurnPedToFaceEntity(player, targetVeh, 1.0)
-						Citizen.Wait(500)
+						Wait(500)
 						SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"), true)
-						Citizen.Wait(300)
+						Wait(300)
 						if cfg.freeze then FreezeEntityPosition(player, true) end
 						TaskStartScenarioInPlace(player, cfg.scenario, 0, true)
 						if Config.ProgressBars then 
 							exports['progressBars']:startUI((cfg.progressBar.timer), cfg.progressBar.text)
 						end
-						Citizen.Wait(cfg.progressBar.timer - 1000)
+						Wait(cfg.progressBar.timer - 1000)
 						ClearPedTasks(player)
-						Citizen.Wait(1000)
+						Wait(1000)
 						FreezeEntityPosition(player, false)
 						impounded = true
 						break
@@ -705,14 +902,14 @@ function ImpoundClosestVehicle()
 				end
 			end
 		end
-		local veh_props = ESX.Game.GetVehicleProperties(targetVeh)
+		local veh_props = Game.GetVehicleProperties(targetVeh)
 		local fuel = GetVehicleFuelLevel(targetVeh)
 		if Config.T1GER_Garage then
 			exports['t1ger_garage']:SetVehicleImpounded(targetVeh, false)
 		else
 			print('insert your impound event/function in here, to update state of the vehicle')
 		end
-		ESX.Game.DeleteVehicle(targetVeh)
+		Game.DeleteVehicle(targetVeh)
 		TriggerEvent('t1ger_towtrucker:notify', Lang['vehicle_impounded']:format(veh_props.plate))
 	else
 		TriggerEvent('t1ger_towtrucker:notify', Lang['no_vehicle_nearby'])
@@ -726,13 +923,13 @@ function UnlockClosestVehicle()
 	local targetVeh = GetVehicleInDirection(coordA, coordB)
 	local unlocked = false
 	if (DoesEntityExist(targetVeh) and IsEntityAVehicle(targetVeh)) then
-		ESX.UI.Menu.CloseAll()
+		Menu.CloseAll()
 		T1GER_GetControlOfEntity(targetVeh)
 		SetEntityAsMissionEntity(targetVeh, true, true)
 		local d1,d2 = GetModelDimensions(GetEntityModel(targetVeh))
 		local unlockPos = GetOffsetFromEntityInWorldCoords(targetVeh, d1.x-0.2,0.0,0.0)
 		while not unlocked do 
-			Citizen.Wait(1)
+			Wait(1)
 			local dist = #(coords - vector3(unlockPos.x, unlockPos.y, unlockPos.z))
 			if dist < cfg.drawText.dist then
 				T1GER_DrawTxt(unlockPos.x, unlockPos.y, unlockPos.z, cfg.drawText.str)
@@ -740,15 +937,15 @@ function UnlockClosestVehicle()
 					if dist <= cfg.drawText.interactDist then
 						T1GER_LoadAnim(cfg.anim.dict)
 						TaskTurnPedToFaceEntity(player, targetVeh, 1.0)
-						Citizen.Wait(500)
+						Wait(500)
 						SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"), true)
-						Citizen.Wait(300)
+						Wait(300)
 						if cfg.freeze then FreezeEntityPosition(player, true) end
 						TaskPlayAnim(player, cfg.anim.dict, cfg.anim.lib, 3.0, 3.0, -1, 31, 1.0, 0, 0, 0)
 						if Config.ProgressBars then 
 							exports['progressBars']:startUI((cfg.progressBar.timer), cfg.progressBar.text)
 						end
-						Citizen.Wait(cfg.progressBar.timer)
+						Wait(cfg.progressBar.timer)
 						ClearPedTasks(player)
 						FreezeEntityPosition(player, false)
 						unlocked = true
@@ -778,30 +975,30 @@ function FlipClosestVehicle()
 	local targetVeh = GetVehicleInDirection(coordA, coordB)
 	local flipped = false 
 	if (DoesEntityExist(targetVeh) and IsEntityAVehicle(targetVeh)) then
-		ESX.UI.Menu.CloseAll()
+		Menu.CloseAll()
 		T1GER_GetControlOfEntity(targetVeh)
 		SetEntityAsMissionEntity(targetVeh, true, true)
 		local d1,d2 = GetModelDimensions(GetEntityModel(targetVeh))
 		local flip_pos = GetOffsetFromEntityInWorldCoords(targetVeh, d1.x-0.2,0.0,0.0)
 		while not flipped do 
-			Citizen.Wait(1)
+			Wait(1)
 			local dist = #(coords - vector3(flip_pos.x, flip_pos.y, flip_pos.z))
 			if dist < cfg.drawText.dist then
 				T1GER_DrawTxt(flip_pos.x, flip_pos.y, flip_pos.z, cfg.drawText.str)
 				if IsControlJustPressed(0, cfg.drawText.keybind) then
 					if dist <= cfg.drawText.interactDist then
 						TaskTurnPedToFaceEntity(player, targetVeh, 1.0)
-						Citizen.Wait(500)
+						Wait(500)
 						SetCurrentPedWeapon(player, GetHashKey("WEAPON_UNARMED"), true)
-						Citizen.Wait(300)
+						Wait(300)
 						if cfg.freeze then FreezeEntityPosition(player, true) end
 						TaskStartScenarioInPlace(player, cfg.scenario, 0, true)
 						if Config.ProgressBars then 
 							exports['progressBars']:startUI((cfg.progressBar.timer), cfg.progressBar.text)
 						end
-						Citizen.Wait(cfg.progressBar.timer - 1000)
+						Wait(cfg.progressBar.timer - 1000)
 						ClearPedTasks(player)
-						Citizen.Wait(1000)
+						Wait(1000)
 						FreezeEntityPosition(player, false)
 						flipped = true
 						break
@@ -825,13 +1022,13 @@ function PushClosestVehicle()
 	local targetVeh = GetVehicleInDirection(coordA, coordB)
 	local pushed = false 
 	if (DoesEntityExist(targetVeh) and IsEntityAVehicle(targetVeh)) then
-		ESX.UI.Menu.CloseAll()
+		Menu.CloseAll()
 		T1GER_GetControlOfEntity(targetVeh)
 		SetEntityAsMissionEntity(targetVeh, true, true)
 		local front = nil
 		local new_dist = 0
 		while not pushed do 
-			Citizen.Wait(1)
+			Wait(1)
 			local d1,d2 = GetModelDimensions(GetEntityModel(targetVeh))
 			local rear_pos = GetOffsetFromEntityInWorldCoords(targetVeh, 0.0, d1.y - 0.25, 0.0)
 			local front_pos = GetOffsetFromEntityInWorldCoords(targetVeh, 0.0, d2.y + 0.25, 0.0)
@@ -864,9 +1061,9 @@ function PushClosestVehicle()
 							AttachEntityToEntity(player, targetVeh, GetPedBoneIndex(6286), 0.0, (d1.y - 0.25), (d1.z + 1.0), 0.0, 0.0, 0.0, false, false, false, true, false, true)
 						end
 						TaskPlayAnim(player, cfg.anim.dict, cfg.anim.lib, 3.0, 3.0, -1, 35, 1.0, 0, 0, 0)
-						Citizen.Wait(300)
+						Wait(300)
 						while true do
-							Citizen.Wait(1)
+							Wait(1)
 							DisplayHelpText(('Steer vehicle with ~INPUT_MOVE_LEFT_ONLY~ and ~INPUT_MOVE_RIGHT_ONLY~'))
 							
 							if front then SetVehicleForwardSpeed(targetVeh, -0.80) else SetVehicleForwardSpeed(targetVeh, 0.80) end
@@ -916,7 +1113,7 @@ RegisterCommand(Config.FlatbedTowing.command, function(source, args)
 end, false)
 
 function FlatbedTowFunction()
-	ESX.UI.Menu.CloseAll()
+	Menu.CloseAll()
 	local cfg = Config.FlatbedTowing
 	local towtruck = GetVehiclePedIsIn(player, false)
 	if towtruck == 0 or towtruck == nil then
@@ -937,7 +1134,7 @@ function FlatbedTowFunction()
 			towing.truck = towtruck
 			towing.inUse = true
 			while not complete do
-				Citizen.Wait(1)
+				Wait(1)
 				local sleep = true
 
 				local d1,d2 = GetModelDimensions(GetEntityModel(towtruck))
@@ -1015,7 +1212,7 @@ function FlatbedTowFunction()
 				end
 
 				if sleep then 
-					Citizen.Wait(500)
+					Wait(500)
 				end
 			end
 			towing.inUse = false
@@ -1031,7 +1228,7 @@ function CarryObjectsMainMenu()
 		table.insert(elements, {label = v.label, prop = v.model, bone = v.bone, pos = v.pos, rot = v.rot})
 	end
 	table.insert(elements, {label = 'Remove Obj', value = 'remove_obj'})
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'towtrucker_prop_emotes_menu',
+	Menu.Open('default', GetCurrentResourceName(), 'towtrucker_prop_emotes_menu',
 		{
 			title    = 'Prop Emotes',
 			align    = 'center',
@@ -1044,7 +1241,7 @@ function CarryObjectsMainMenu()
 				local coords = GetEntityCoords(GetPlayerPed(-1))
 				ClearPedTasks(PlayerPedId())
 				ClearPedSecondaryTask(PlayerPedId())
-				Citizen.Wait(250)
+				Wait(250)
 				DetachEntity(carryModel)
 				local allObjects = {"prop_roadcone02a", "prop_tool_box_04", "prop_consign_02a", "prop_mp_barrier_02b"}
 				for i = 1, #allObjects, 1 do
@@ -1064,7 +1261,7 @@ function CarryObjectsMainMenu()
 				carryModel = 0
 				holdingObj = true
 				if selct.prop == "prop_consign_02a" or selct.prop == "prop_mp_barrier_02b" then PlayPushObjAnim() end
-				ESX.Game.SpawnObject(selct.prop, {x = coords.x, y = coords.y, z = coords.z}, function(spawnModel)
+				Game.SpawnObject(selct.prop, {x = coords.x, y = coords.y, z = coords.z}, function(spawnModel)
 					carryModel = spawnModel
 					local boneIndex = GetPedBoneIndex(PlayerPedId(), selct.bone)
 					local pX, pY, pZ, rX, rY, rZ = round(selct.pos[1],2), round(selct.pos[2],2), round(selct.pos[3],2), round(selct.rot[1],2), round(selct.rot[2],2), round(selct.rot[3],2)
@@ -1080,9 +1277,9 @@ function CarryObjectsMainMenu()
 	end)
 end
 
-Citizen.CreateThread(function()
+CreateThread(function()
     while true do 
-		Citizen.Wait(4)
+		Wait(4)
 		if IsControlJustPressed(0, Config.KeyControls['push_pickup_objs']) and carryModel ~= 0 then
 			if not IsPedInAnyVehicle(player, true) then
 				if Config.TowServices[towID] ~= nil then
@@ -1102,7 +1299,7 @@ Citizen.CreateThread(function()
 						if holdingObj then 
 							holdingObj = false
 							if (objName == 'prop_roadcone02a') or (objName == 'prop_tool_box_04') then PlayPickUpAnim() end
-							Citizen.Wait(250)
+							Wait(250)
 							DetachEntity(carryModel)
 							ClearPedTasks(PlayerPedId())
 							ClearPedSecondaryTask(PlayerPedId())
@@ -1112,13 +1309,13 @@ Citizen.CreateThread(function()
 							if Dist < 1.75 then
 								holdingObj = true
 								if (objName == 'prop_roadcone02a') or (objName == 'prop_tool_box_04') then PlayPickUpAnim() end
-								Citizen.Wait(250)
+								Wait(250)
 								ClearPedTasks(PlayerPedId())
 								ClearPedSecondaryTask(PlayerPedId())
 								if (objName == 'prop_consign_02a') or (objName == 'prop_mp_barrier_02b') then 
 									PlayPushObjAnim()
 								end
-								Citizen.Wait(250)
+								Wait(250)
 								AttachEntityToEntity(carryModel, PlayerPedId(), GetPedBoneIndex(PlayerPedId(), zk[objName].bone), zk[objName].pos[1], zk[objName].pos[2], zk[objName].pos[3], zk[objName].rot[1], zk[objName].rot[2], zk[objName].rot[3], true, true, false, true, 2, 1)
 							end
 						end
@@ -1156,7 +1353,7 @@ function TowTruckerJobs()
 		{ label = 'Find Call', value = 'find_job' },
 		{ label = 'Cancel Job', value = 'cancel_job' },
 	}
-	ESX.UI.Menu.Open('default', GetCurrentResourceName(), 'towtrucker_npc_job_menu',
+	Menu.Open('default', GetCurrentResourceName(), 'towtrucker_npc_job_menu',
 		{
 			title    = 'NPC Job Menu',
 			align    = 'center',
@@ -1212,7 +1409,7 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 	local buttonClicked = false
 
 	while not JobDone do 
-		Citizen.Wait(0)
+		Wait(0)
 
 		if job.inUse then
 
@@ -1257,7 +1454,7 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 							buttonClicked = true
 							SetVehicleDoorOpen(towJob.veh, 4, 0, 0)
 							TaskTurnPedToFaceEntity(GetPlayerPed(-1), towJob.veh, 1.0)
-							Citizen.Wait(1000)
+							Wait(1000)
 							local animDict = "mini@repair"
 							T1GER_LoadAnim(animDict)
 							if not IsEntityPlayingAnim(GetPlayerPed(-1), animDict, "fixing_a_player", 3) then
@@ -1266,7 +1463,7 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 							if Config.ProgressBars then 
 								exports['progressBars']:startUI((3000), Lang['pb_towjob'])
 							end
-							Citizen.Wait(3000)
+							Wait(3000)
 							SetVehicleDoorShut(towJob.veh, 4, 1, 1)
 							ClearPedTasks(GetPlayerPed(-1))
 							TriggerEvent('t1ger_towtrucker:notify', Lang['job_attach_veh'])
@@ -1325,9 +1522,9 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 					local vehDist = #(vehicleCoords - vector3(job.dropoff[1], job.dropoff[2], job.dropoff[3]))
 					if not IsEntityAttachedToAnyVehicle(towJob.veh) and vehDist < 3.0 and towJob.detached == nil then
 						TaskLeaveVehicle(towJob.ped, TowTruck, 0)
-						Citizen.Wait(3000)
+						Wait(3000)
 						TaskTurnPedToFaceEntity(towJob.ped, towJob.veh, 1.0)
-						Citizen.Wait(1000)
+						Wait(1000)
 						TriggerEvent('t1ger_towtrucker:notify', Lang['job_collect_cash'])
 						towJob.detached = true
 					end
@@ -1339,14 +1536,14 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 							T1GER_LoadAnim("mp_common")
 							TaskPlayAnim(player, "mp_common", "givetake2_a", 8.0, 8.0, 2000, 0, 1, 0,0,0)
 							TaskPlayAnim(towJob.ped, "mp_common", "givetake2_a", 8.0, 8.0, 2000, 0, 1, 0,0,0)
-							Citizen.Wait(2000)
+							Wait(2000)
 							if DoesBlipExist(blip) then RemoveBlip(blip) end
 							TaskWanderStandard(towJob.ped, 10.0, 10)
 							TriggerEvent('t1ger_towtrucker:notify', Lang['job_thanking_msg'])
 							TriggerServerEvent('t1ger_towtrucker:getJobReward', job.payout)
 							towJob.collected = true
 							DeleteEntity(towJob.veh)
-							Citizen.Wait(10000)
+							Wait(10000)
 							CancelJob = true
 						end
 					end
@@ -1404,7 +1601,7 @@ AddEventHandler('t1ger_towtrucker:startJobWithNPC', function(type, num)
 							T1GER_DrawTxt(vehicleCoords.x, vehicleCoords.y, vehicleCoords.z, Lang['draw_attach_note'])
 							if IsControlJustPressed(0, Config.KeyControls['attach_note']) then
 								TaskPlayAnim(player, "mp_common", "givetake2_a", 8.0, 8.0, 2000, 0, 1, 0,0,0)
-								Citizen.Wait(2000)
+								Wait(2000)
 								if DoesBlipExist(blip) then RemoveBlip(blip) end
 								TriggerEvent('t1ger_towtrucker:notify', Lang['job_veh_delivered'])
 								TriggerServerEvent('t1ger_towtrucker:getJobReward', job.payout)
@@ -1448,7 +1645,7 @@ function CreateJobVehicle(data, type)
 	local num = math.random(#Config.TowTruckerJobs.JobVehicles)
 	local model = Config.TowTruckerJobs.JobVehicles[num]
 	-- Spawn Vehicle:
-	ESX.Game.SpawnVehicle(model, {x = data.pos[1], y = data.pos[2], z = data.pos[3]}, data.pos[4], function(vehicle)
+	Game.SpawnVehicle(model, {x = data.pos[1], y = data.pos[2], z = data.pos[3]}, data.pos[4], function(vehicle)
 		SetEntityCoordsNoOffset(vehicle, data.pos[1], data.pos[2], data.pos[3])
 		SetEntityHeading(vehicle, data.pos[4])
 		SetVehicleOnGroundProperly(vehicle)
@@ -1460,7 +1657,7 @@ function CreateJobVehicle(data, type)
 	end)
 
 	while not DoesEntityExist(entity) do
-		Citizen.Wait(10)
+		Wait(10)
 	end
 
 	return entity
@@ -1484,7 +1681,7 @@ function CreateJobPed(data)
 	SetRelationshipBetweenGroups(0, GetHashKey("PLAYER"), GetHashKey("NPC"))
 	SetRelationshipBetweenGroups(0, GetHashKey("NPC"), GetHashKey("PLAYER"))
 	while not DoesEntityExist(entity) do
-		Citizen.Wait(10)
+		Wait(10)
 	end
 	return entity
 end
@@ -1525,7 +1722,10 @@ function CancelCurrentJob()
 	end
 end
 
-AddEventHandler('esx:onPlayerDeath', function(data)
+AddEventHandler('baseevents:onPlayerDied', function()
+	CancelCurrentJob()
+end)
+AddEventHandler('baseevents:onPlayerKilled', function()
 	CancelCurrentJob()
 end)
 
@@ -1553,14 +1753,14 @@ AddEventHandler('t1ger_towtrucker:useRepairKit', function(data)
 
 		-- Repair thread:
         while not vehRepaired do
-            Citizen.Wait(1)
+            Wait(1)
             distance = (GetDistanceBetweenCoords(GetEntityCoords(player, 1), vector3(hood.x, hood.y, hood.z), true))
 			T1GER_DrawTxt(hood.x, hood.y, hood.z, Lang['draw_repair_kit'])
 			if IsControlJustPressed(0, Config.KeyControls['use_repairkit']) then 
 				if distance < 1.0 then 
 					SetVehicleDoorOpen(vehicle, 4, 0, 0)
 					TaskTurnPedToFaceEntity(player, vehicle, 1.0)
-					Citizen.Wait(1000)
+					Wait(1000)
 					local animDict = "mini@repair"
 					T1GER_LoadAnim(animDict)
 					if not IsEntityPlayingAnim(player, animDict, "fixing_a_player", 3) then
@@ -1571,7 +1771,7 @@ AddEventHandler('t1ger_towtrucker:useRepairKit', function(data)
 					if Config.ProgressBars then
 						exports['progressBars']:startUI((repairDuration), data.progbar)
 					end
-					Citizen.Wait(repairDuration)
+					Wait(repairDuration)
 					if GetVehicleEngineHealth(vehicle) < data.setEngine then
 						SetVehicleEngineHealth(vehicle, data.setEngine)
 					end

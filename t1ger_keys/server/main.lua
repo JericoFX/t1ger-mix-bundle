@@ -4,7 +4,6 @@
 
 local QBCore = exports['qb-core']:GetCoreObject()
 
-local online_cops = 0
 local job_keys = {}
 local keys_cache = {}
 
@@ -64,32 +63,33 @@ local function PlayerHasRegisteredKey(citizenid, plate)
         return result ~= nil and result ~= 0
 end
 
-local function FetchOnlineCops()
-        local players = QBCore.Functions.GetQBPlayers()
-        local count = 0
-        for _, Player in pairs(players) do
-                if Player.PlayerData and Player.PlayerData.job then
-                        for _, jobName in pairs(Config.Police.Jobs) do
-                                if Player.PlayerData.job.name == jobName then
-                                        count = count + 1
-                                        break
-                                end
-                        end
-                end
+local function getDutyCount(jobName)
+        if QBCore.Functions.GetDutyCount then
+                local count = QBCore.Functions.GetDutyCount(jobName)
+                return count or 0
         end
-        if online_cops ~= count then
-                TriggerClientEvent('t1ger_keys:updateCopsCount', -1, count)
-        end
-        online_cops = count
-        SetTimeout(Config.Police.Timer * 60000, FetchOnlineCops)
+
+        local _, count = QBCore.Functions.GetPlayersByJob(jobName, true)
+        return count or 0
 end
 
-CreateThread(function()
-        while GetResourceState(GetCurrentResourceName()) ~= 'started' do
-                Wait(0)
+local function countOnlineCops()
+        local total = 0
+        for _, jobName in pairs(Config.Police.Jobs) do
+                total = total + getDutyCount(jobName)
         end
-        FetchOnlineCops()
+        return total
+end
+
+QBCore.Functions.CreateCallback('t1ger_keys:getOnlineCops', function(_, cb)
+        cb(countOnlineCops())
 end)
+
+if lib and lib.callback and lib.callback.register then
+        lib.callback.register('t1ger_keys:getOnlineCops', function()
+                return countOnlineCops()
+        end)
+end
 
 local function SyncPlayerKeys(src, citizenid)
         keys_cache[citizenid] = EnsureCache(citizenid)

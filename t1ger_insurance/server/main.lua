@@ -200,7 +200,11 @@ end
 local function IsBrokerBoss(player)
         if not IsBroker(player) then return false end
         local job = player.PlayerData.job
+        if job.isBoss ~= nil then return job.isBoss end
         if job.isboss then return true end
+        if job.grade and job.grade.isBoss ~= nil then
+                return job.grade.isBoss
+        end
         if job.grade and job.grade.isboss then
                 return true
         end

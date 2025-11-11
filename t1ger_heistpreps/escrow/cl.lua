@@ -6,29 +6,35 @@ end)
 
 RegisterNetEvent('t1ger_heistpreps:sendCacheCL')
 AddEventHandler('t1ger_heistpreps:sendCacheCL', function(data, type, num)
-	Config.Jobs[type][num].cache = data
+        Config.Jobs[type][num].cache = data
 end)
 
+local randomSeeded = false
+
+local function ensureRandomSeed()
+        if randomSeeded then return end
+        math.randomseed(GetCloudTimeAsInt() + GetGameTimer())
+        math.random(); math.random(); math.random()
+        randomSeeded = true
+end
+
 function GetRandomJobType()
-	math.randomseed(GetGameTimer())
-	local type = Config.Types[math.random(1, #Config.Types)]
-	return type
+        ensureRandomSeed()
+        return Config.Types[math.random(1, #Config.Types)]
 end
 
 function GetRandomJobLocation(type)
-	math.randomseed(GetGameTimer())
-	local num = math.random(1, #Config.Jobs[type])
-	local i = 1
-	while Config.Jobs[type][num].inUse == true and i < 100 do
-        i = i + 1
-        math.randomseed(GetGameTimer())
-        num = math.random(1, #Config.Jobs[type])
-    end
-    if i == 100 then
-		return nil
-    else
-		return num
-    end
+        ensureRandomSeed()
+        local available = {}
+        for index = 1, #Config.Jobs[type] do
+                if not Config.Jobs[type][index].inUse then
+                        available[#available + 1] = index
+                end
+        end
+        if #available == 0 then
+                return nil
+        end
+        return available[math.random(1, #available)]
 end
 
 function IsPhoneBoxAllowed(coords)

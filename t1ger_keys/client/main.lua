@@ -12,12 +12,6 @@ end)
 local job_keys = {}
 local car_keys = {}
 
-local online_cops = 0
-RegisterNetEvent('t1ger_keys:updateCopsCount')
-AddEventHandler('t1ger_keys:updateCopsCount', function(count)
-	online_cops = count
-end)
-
 -- ## DECORS ## --
 
 -- Lock Decor:

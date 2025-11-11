@@ -34,4 +34,5 @@ Lang = {
     ['cooldown_active']       = 'Please wait before making another transaction.',
     ['quantity_limit']        = 'Amount must be greater than zero.',
     ['item_missing']          = 'The requested item could not be found.',
+    ['transaction_failed']    = 'Transaction failed. Please try again later.',
 }

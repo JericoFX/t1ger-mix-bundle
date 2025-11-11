@@ -1,8 +1,17 @@
 
+local randomSeeded = false
+
+local function ensureRandomSeed()
+    if randomSeeded then return end
+    math.randomseed(GetCloudTimeAsInt() + os.time())
+    math.random(); math.random(); math.random()
+    randomSeeded = true
+end
+
 RegisterServerEvent('t1ger_heistpreps:hacking:spawnDevice')
 AddEventHandler('t1ger_heistpreps:hacking:spawnDevice', function(type, num)
     local cfg = Config.Jobs[type][num]
-    math.randomseed(GetGameTimer())
+    ensureRandomSeed()
     local coords = cfg.spawn[math.random(1, #cfg.spawn)]
     local h_device, netId = T1GER_CreateServerObject(cfg.model, coords[1], coords[2], coords[3], 10000.0, true)
     Config.Jobs[type][num].inUse = true
@@ -143,17 +152,23 @@ end
 
 
 function GetScrambledStuff(t, count)
-    local scrambler = {}
-    for i = 1, count do 
-        math.randomseed(GetGameTimer())
-        local num = math.random(1, #t)
-        Wait(1)
-        while scrambler[num] == num do
-            math.randomseed(GetGameTimer())
-            num = math.random(1, #t)
-        end
-        scrambler[num] = num
+    ensureRandomSeed()
+    local indices = {}
+    for i = 1, #t do
+        indices[i] = i
     end
+
+    for i = #indices, 2, -1 do
+        local j = math.random(i)
+        indices[i], indices[j] = indices[j], indices[i]
+    end
+
+    local scrambler = {}
+    for i = 1, math.min(count, #indices) do
+        local index = indices[i]
+        scrambler[index] = index
+    end
+
     return scrambler, true
 end
 

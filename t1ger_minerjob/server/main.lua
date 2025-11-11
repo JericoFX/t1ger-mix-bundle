@@ -1,6 +1,7 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
 local resourceName = GetCurrentResourceName()
+local useOxInventory = GetResourceState('ox_inventory') == 'started'
 
 local itemIcons = {
     pickaxe = 'pickaxe.png',
@@ -97,8 +98,12 @@ lib.callback.register('t1ger_minerjob:getInventoryItem', function(source, item, 
     local requiredAmount = ensureAmount(amount)
     if requiredAmount <= 0 then return false end
 
+    if useOxInventory then
+        return exports.ox_inventory:GetItemCount(source, item, nil, true) >= requiredAmount
+    end
+
     local inventoryItem = Player.Functions.GetItemByName(item)
-    return inventoryItem and inventoryItem.amount >= requiredAmount
+    return inventoryItem and (inventoryItem.amount or 0) >= requiredAmount
 end)
 
 lib.callback.register('t1ger_minerjob:removeItem', function(source, item, amount)
@@ -108,8 +113,12 @@ lib.callback.register('t1ger_minerjob:removeItem', function(source, item, amount
     local requiredAmount = ensureAmount(amount)
     if requiredAmount <= 0 then return false end
 
+    if useOxInventory then
+        return exports.ox_inventory:RemoveItem(source, item, requiredAmount, nil, nil, false)
+    end
+
     local inventoryItem = Player.Functions.GetItemByName(item)
-    if not inventoryItem or inventoryItem.amount < requiredAmount then
+    if not inventoryItem or (inventoryItem.amount or 0) < requiredAmount then
         return false
     end
 
@@ -153,7 +162,14 @@ RegisterNetEvent('t1ger_minerjob:miningReward', function(item, amount)
     local rewardAmount = ensureAmount(amount)
     if rewardAmount <= 0 then return end
 
-    if Player.Functions.AddItem(item, rewardAmount) then
+    local success
+    if useOxInventory then
+        success = exports.ox_inventory:AddItem(src, item, rewardAmount)
+    else
+        success = Player.Functions.AddItem(item, rewardAmount)
+    end
+
+    if success then
         notifyWithItem(src, (Lang['stone_mined']):format(rewardAmount, getItemLabel(item)), 'success', item)
     else
         notify(src, Lang['inventory_full'], 'error')
@@ -168,7 +184,14 @@ RegisterNetEvent('t1ger_minerjob:washingReward', function(item, amount)
     local rewardAmount = ensureAmount(amount)
     if rewardAmount <= 0 then return end
 
-    if Player.Functions.AddItem(item, rewardAmount) then
+    local success
+    if useOxInventory then
+        success = exports.ox_inventory:AddItem(src, item, rewardAmount)
+    else
+        success = Player.Functions.AddItem(item, rewardAmount)
+    end
+
+    if success then
         notifyWithItem(src, (Lang['stone_washed']):format(rewardAmount, getItemLabel(item)), 'success', item)
     else
         notify(src, Lang['inventory_full'], 'error')

@@ -3,6 +3,14 @@
 ------------------------------------- 
  
 local QBCore = exports['qb-core']:GetCoreObject()
+local randomSeeded = false
+
+local function ensureRandomSeed()
+    if randomSeeded then return end
+    math.randomseed(GetCloudTimeAsInt() + GetGameTimer())
+    math.random(); math.random(); math.random()
+    randomSeeded = true
+end
 
 local cache = {
     ped = PlayerPedId(),
@@ -378,8 +386,8 @@ function SearchCrate(id, val, num, crate)
                 ClearPedTasks(player)
                 return
         end
-	math.randomseed(GetGameTimer())
-	local chance = math.random(0,100)
+    ensureRandomSeed()
+    local chance = math.random(0,100)
 	for i = 1, #crate.npc do
 		SetPedShouldPlayNormalScenarioExit(drills_data[id].npc[num].peds[i])
 		TaskCombatPed(drills_data[id].npc[num].peds[i], player, 0, 16)

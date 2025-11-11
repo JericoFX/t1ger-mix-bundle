@@ -14,7 +14,11 @@ end
 
 local function IsBrokerBoss()
         if not IsPlayerBroker() then return false end
+        if PlayerData.job.isBoss ~= nil then return PlayerData.job.isBoss end
         if PlayerData.job.isboss then return true end
+        if PlayerData.job.grade and PlayerData.job.grade.isBoss ~= nil then
+                return PlayerData.job.grade.isBoss
+        end
         if PlayerData.job.grade and PlayerData.job.grade.isboss then
                 return true
         end
@@ -402,14 +406,12 @@ RegisterCommand(Config.Insurance.job.menu.command, function()
         InsuranceInteractionMenu()
 end, false)
 
-CreateThread(function()
-        while true do
-                Wait(1)
-                if IsControlJustReleased(0, Config.Insurance.job.menu.keybind) then
-                        InsuranceInteractionMenu()
-                end
-        end
-end)
+RegisterKeyMapping(
+        Config.Insurance.job.menu.command,
+        Lang['keybind_insurance_menu'] or 'Open insurance menu',
+        'keyboard',
+        Config.Insurance.job.menu.defaultKey or 'F6'
+)
 
 RegisterNetEvent('t1ger_insurance:client:openMenu', function()
         openMainMenu()

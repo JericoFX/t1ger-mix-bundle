@@ -31,16 +31,27 @@ local function showPrompt(id, text)
 end
 
 local function getVehicleFuel(vehicle)
-    if Config.HasFuelScript and GetResourceState('LegacyFuel') == 'started' then
-        return exports['LegacyFuel']:GetFuel(vehicle)
+    if Config.HasFuelScript then
+        if GetResourceState('ox_fuel') == 'started' and exports.ox_fuel then
+            return exports.ox_fuel:GetFuel(vehicle)
+        end
+        if GetResourceState('LegacyFuel') == 'started' then
+            return exports['LegacyFuel']:GetFuel(vehicle)
+        end
     end
     return GetVehicleFuelLevel(vehicle)
 end
 
 local function setVehicleFuel(vehicle, value)
-    if Config.HasFuelScript and GetResourceState('LegacyFuel') == 'started' then
-        exports['LegacyFuel']:SetFuel(vehicle, value)
-        return
+    if Config.HasFuelScript then
+        if GetResourceState('ox_fuel') == 'started' and exports.ox_fuel then
+            exports.ox_fuel:SetFuel(vehicle, value)
+            return
+        end
+        if GetResourceState('LegacyFuel') == 'started' then
+            exports['LegacyFuel']:SetFuel(vehicle, value)
+            return
+        end
     end
     SetVehicleFuelLevel(vehicle, value)
 end
@@ -78,6 +89,14 @@ end
 
 local function ensureSpawnAreaClear(coords, radius)
     radius = radius or 3.0
+    if lib and lib.getClosestVehicle then
+        local vehicle = lib.getClosestVehicle(coords, radius, true)
+        if vehicle and vehicle ~= 0 and DoesEntityExist(vehicle) then
+            return #(GetEntityCoords(vehicle) - coords) > radius
+        end
+        return true
+    end
+
     local handle, vehicle = FindFirstVehicle()
     local success
     local blocked = false

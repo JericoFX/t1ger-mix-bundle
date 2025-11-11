@@ -2,6 +2,14 @@
 ------- Created by T1GER#9080 -------
 ------------------------------------- 
 local QBCore = exports['qb-core']:GetCoreObject()
+local randomSeeded = false
+
+local function ensureRandomSeed()
+    if randomSeeded then return end
+    math.randomseed(GetCloudTimeAsInt() + os.time())
+    math.random(); math.random(); math.random()
+    randomSeeded = true
+end
 local jobTimeouts = {}
 
 local function getPlayer(src)
@@ -310,7 +318,7 @@ end)
 RegisterServerEvent('t1ger_heistpreps:explosives:spawnCase')
 AddEventHandler('t1ger_heistpreps:explosives:spawnCase', function(type, num)
     local cfg = Config.Jobs[type][num]
-    math.randomseed(GetGameTimer())
+    ensureRandomSeed()
     local coords = cfg.spawn[math.random(1, #cfg.spawn)]
     local case, netId = T1GER_CreateServerObject(cfg.model, coords.x, coords.y, coords.z, 10000.0, false)
     print("case coords: ", coords)

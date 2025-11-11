@@ -5,6 +5,8 @@ local QBCore = exports['qb-core']:GetCoreObject()
 
 local exchangeCooldown = {}
 local jobCooldown = {}
+local jobStates = {}
+local activePlayerJobs = {}
 
 local function getCitizenId(Player)
     return Player and Player.PlayerData and Player.PlayerData.citizenid
@@ -55,6 +57,39 @@ end
 local function notifyPlayer(source, message, messageType)
     if not source or not message then return end
     TriggerClientEvent('t1ger_goldcurrency:notify', source, { description = message, type = messageType or 'inform' })
+end
+
+local function broadcastJobState(id, state)
+    if not id then return end
+    jobStates[id] = jobStates[id] or { inUse = false }
+    jobStates[id].inUse = state and true or false
+    GlobalState[('t1ger_goldcurrency:job:%s'):format(id)] = jobStates[id]
+    TriggerClientEvent('t1ger_goldcurrency:setJobInUse', -1, id, jobStates[id].inUse)
+end
+
+local function reserveJobForPlayer(identifier, jobId)
+    if not identifier or not jobId then return false end
+    activePlayerJobs[identifier] = jobId
+    broadcastJobState(jobId, true)
+    return true
+end
+
+local function releaseJobForPlayer(identifier)
+    local jobId = identifier and activePlayerJobs[identifier]
+    if not jobId then return end
+    activePlayerJobs[identifier] = nil
+    broadcastJobState(jobId, false)
+end
+
+local function getFreeJobs()
+    local available = {}
+    for id = 1, #Config.GoldJobs do
+        local state = jobStates[id]
+        if not state or not state.inUse then
+            available[#available + 1] = id
+        end
+    end
+    return available
 end
 
 local function setCooldown(store, identifier, minutes)
@@ -132,6 +167,9 @@ end)
 
 CreateThread(function()
     Wait(1000)
+    for id = 1, #Config.GoldJobs do
+        broadcastJobState(id, false)
+    end
     TriggerClientEvent('t1ger_goldcurrency:createNPC', -1, Config.JobNPC)
 end)
 
@@ -144,51 +182,68 @@ RegisterNetEvent('QBCore:Server:OnPlayerLoaded', function(src)
     TriggerClientEvent('t1ger_goldcurrency:createNPC', src or source, Config.JobNPC)
 end)
 
-lib.callback.register('t1ger_goldcurrency:getJobCooldown', function(source)
+AddEventHandler('playerDropped', function()
     local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return true end
-    local identifier = getCitizenId(Player)
-    if not identifier then return true end
-    if isOnCooldown(jobCooldown, identifier) then
-        notifyPlayer(source, (Lang['job_timer']):format(getCooldownMinutes(jobCooldown, identifier)), 'error')
-        return true
+    if not Player then return end
+    releaseJobForPlayer(getCitizenId(Player))
+end)
+
+lib.callback.register('t1ger_goldcurrency:assignJob', function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then
+        return { success = false, message = Lang['no_jobs_available'] }
     end
-    return false
+
+    local identifier = getCitizenId(Player)
+    if not identifier then
+        return { success = false, message = Lang['no_jobs_available'] }
+    end
+
+    if isOnCooldown(jobCooldown, identifier) then
+        return { success = false, message = (Lang['job_timer']):format(getCooldownMinutes(jobCooldown, identifier)) }
+    end
+
+    if not hasFunds(Player, Config.JobNPC.jobFees) then
+        return { success = false, message = Lang['not_enough_money'] }
+    end
+
+    if countPolice() < Config.PoliceSettings.requiredCops then
+        return { success = false, message = Lang['not_enough_cops'] }
+    end
+
+    local available = getFreeJobs()
+    if #available == 0 then
+        return { success = false, message = Lang['no_jobs_available'] }
+    end
+
+    local jobIndex = available[math.random(1, #available)]
+    reserveJobForPlayer(identifier, jobIndex)
+
+    removeFunds(Player, Config.JobNPC.jobFees)
+    setCooldown(jobCooldown, identifier, Config.JobNPC.cooldown or 0)
+
+    local vehicleIndex = math.random(1, #Config.JobVehicles)
+    local vehModel = Config.JobVehicles[vehicleIndex]
+
+    TriggerClientEvent('t1ger_goldcurrency:startTheGoldJob', source, jobIndex, vehModel)
+
+    return { success = true, job = jobIndex, vehicle = vehModel }
 end)
 
-lib.callback.register('t1ger_goldcurrency:getJobFees', function(source, fees)
-    local Player = QBCore.Functions.GetPlayer(source)
-    if not Player then return false end
-    return hasFunds(Player, fees)
-end)
-
-lib.callback.register('t1ger_goldcurrency:checkCops', function()
-    return countPolice() >= Config.PoliceSettings.requiredCops
-end)
-
-RegisterNetEvent('t1ger_goldcurrency:prepareJobSV', function(id, fees, vehModel)
+RegisterNetEvent('t1ger_goldcurrency:releaseJob', function(jobId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
 
-    local jobConfig = id and Config.GoldJobs and Config.GoldJobs[id]
-    if not jobConfig then
-        notifyPlayer(src, Lang['no_jobs_available'], 'error')
+    local identifier = getCitizenId(Player)
+    if not identifier then return end
+
+    if jobId and jobStates[jobId] and jobStates[jobId].inUse then
+        releaseJobForPlayer(identifier)
         return
     end
 
-    if not hasFunds(Player, fees) then
-        notifyPlayer(src, Lang['not_enough_money'], 'error')
-        return
-    end
-
-    removeFunds(Player, fees)
-    setCooldown(jobCooldown, getCitizenId(Player), Config.JobNPC.cooldown or 0)
-    TriggerClientEvent('t1ger_goldcurrency:startTheGoldJob', src, id, vehModel)
-end)
-
-RegisterNetEvent('t1ger_goldcurrency:updateConfigSV', function(data)
-    TriggerClientEvent('t1ger_goldcurrency:updateConfigCL', -1, data)
+    releaseJobForPlayer(identifier)
 end)
 
 RegisterNetEvent('t1ger_goldcurrency:PoliceNotifySV', function(targetCoords, streetName, label)
@@ -215,6 +270,8 @@ RegisterNetEvent('t1ger_goldcurrency:giveJobReward', function()
         end
         Wait(250)
     end
+
+    releaseJobForPlayer(getCitizenId(Player))
 end)
 
 lib.callback.register('t1ger_goldcurrency:getInventoryItem', function(source, item, amount)

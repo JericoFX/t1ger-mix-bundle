@@ -131,11 +131,15 @@ end
 
 function T1GER_IsBoss()
 if not PlayerData or not PlayerData.job then return false end
+if PlayerData.job.isBoss ~= nil then
+return PlayerData.job.isBoss
+end
 if PlayerData.job.isboss ~= nil then
 return PlayerData.job.isboss
 end
 local grade = PlayerData.job.grade
 if type(grade) == 'table' then
+if grade.isBoss ~= nil then return grade.isBoss end
 if grade.isboss ~= nil then return grade.isboss end
 return (grade.name and grade.name:lower() == 'boss') or (grade.level and grade.level >= (Config.BossGrade or grade.level))
 end

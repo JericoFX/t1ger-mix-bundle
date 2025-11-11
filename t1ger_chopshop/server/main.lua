@@ -59,19 +59,32 @@ end
 
 local function GenerateCarList()
     carList = {}
-    local scrambler = {}
-    local totalCount = Config.ChopShop.Settings.carListAmount
+    local shuffled = {}
+    for index, data in ipairs(Config.ScrapVehicles) do
+        shuffled[index] = data
+    end
+
+    for i = #shuffled, 2, -1 do
+        local j = math.random(i)
+        shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+    end
+
+    local totalCount = math.min(Config.ChopShop.Settings.carListAmount, #shuffled)
     for i = 1, totalCount do
-        local val = math.random(1, #Config.ScrapVehicles)
-        Wait(1)
-        while scrambler[val] == val do
-            val = math.random(1, #Config.ScrapVehicles)
-        end
-        scrambler[val] = val
-        local car = Config.ScrapVehicles[val]
+        local car = shuffled[i]
         carList[#carList + 1] = { label = car.label, hash = car.hash, price = car.price }
     end
+
     return carList
+end
+
+local function notify(source, message, messageType)
+    if not source or not message then return end
+    TriggerClientEvent('ox_lib:notify', source, {
+        title = Lang and Lang['notify_title'] or 'Chop Shop',
+        description = message,
+        type = messageType or 'inform'
+    })
 end
 
 local function InitializeChopShop()
@@ -143,7 +156,7 @@ QBCore.Functions.CreateCallback('t1ger_chopshop:hasCooldown', function(source, c
         scrap = Lang['scrap_cooldown'],
         thief = Lang['job_cooldown']
     }
-    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', source, (messages[cooldownType] or Lang['scrap_cooldown']):format(minutes))
+    notify(source, (messages[cooldownType] or Lang['scrap_cooldown']):format(minutes), 'error')
     cb(true)
 end)
 
@@ -205,7 +218,7 @@ RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
     local money = math.floor((scrapCar.price or 0) * (percent / 100))
     if cfg.cash.enable and money > 0 then
         addMoney(player, money, cfg.cash.dirty, 't1ger-chopshop-scrap')
-        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['cash_reward']:format(money))
+        notify(src, Lang['cash_reward']:format(money), 'success')
     end
 
     if cfg.items.enable then
@@ -248,20 +261,20 @@ RegisterNetEvent('t1ger_chopshop:selectRiskGrade', function(grade)
     if not Config.ChopShop.Police.allowCops then
         for _, jobName in pairs(Config.ChopShop.Police.jobs) do
             if player.PlayerData.job.name == jobName then
-                TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['police_not_allowed'])
+                notify(src, Lang['police_not_allowed'], 'error')
                 return
             end
         end
     end
 
     if GetCopsCount() < selectedGrade.cops then
-        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['not_enough_police'])
+        notify(src, Lang['not_enough_police'], 'error')
         return
     end
 
     local jobFee = selectedGrade.job_fees
     if jobFee > 0 and not canAfford(player, jobFee, Config.ChopShop.Settings.jobFeesDirty) then
-        TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['not_enough_money'])
+        notify(src, Lang['not_enough_money'], 'error')
         return
     end
 
@@ -274,7 +287,7 @@ RegisterNetEvent('t1ger_chopshop:selectRiskGrade', function(grade)
     activeThiefJobs[src] = { payout = veh.payout, hash = veh.hash }
 
     TriggerClientEvent('t1ger_chopshop:BrowseAvailableJobs', src, 0, selectedGrade.grade, veh)
-    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['paid_for_job']:format(jobFee, selectedGrade.label))
+    notify(src, Lang['paid_for_job']:format(jobFee, selectedGrade.label), 'success')
 end)
 
 function GetCopsCount()
@@ -333,7 +346,7 @@ RegisterNetEvent('t1ger_chopshop:JobCompleteSV', function(payout, percent)
         addCooldown(src, 'thief')
     end
 
-    TriggerClientEvent('t1ger_chopshop:ShowNotifyESX', src, Lang['reward_msg']:format(money))
+    notify(src, Lang['reward_msg']:format(money), 'success')
     activeThiefJobs[src] = nil
 end)
 

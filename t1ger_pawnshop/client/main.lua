@@ -49,7 +49,22 @@ local function transactionDialog(action, itemName)
         return
     end
 
-    TriggerServerEvent(('t1ger_pawnshop:%sItem'):format(action), itemName, amount)
+    local result = lib.callback.await('t1ger_pawnshop:processTransaction', false, {
+        action = action,
+        item = itemName,
+        amount = amount
+    })
+
+    if not result then
+        TriggerEvent('t1ger_pawnshop:notify', Lang['transaction_failed'], 'error')
+        return
+    end
+
+    if result.success then
+        TriggerEvent('t1ger_pawnshop:notify', result.message, 'success')
+    else
+        TriggerEvent('t1ger_pawnshop:notify', result.message, 'error')
+    end
 end
 
 local function openBuyMenu(shopId)

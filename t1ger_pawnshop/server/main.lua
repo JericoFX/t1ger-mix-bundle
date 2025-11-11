@@ -41,131 +41,111 @@ local function formatCurrency(amount)
     return tostring(math.floor(amount + 0.5))
 end
 
-local function handleInvalidItem(source, messageKey)
-    TriggerClientEvent('t1ger_pawnshop:notify', source, Lang[messageKey] or messageKey, 'error')
-end
-
-RegisterNetEvent('t1ger_pawnshop:buyItem', function(itemName, amount)
-    local src = source
-    local player = QBCore.Functions.GetPlayer(src)
-    if not player then return end
-
-    if type(amount) ~= 'number' then
-        handleInvalidItem(src, 'invalid_amount')
-        return
-    end
-
-    amount = math.floor(amount)
-    if amount <= 0 then
-        handleInvalidItem(src, 'quantity_limit')
-        return
-    end
-
-    if isOnCooldown(src) then
-        handleInvalidItem(src, 'cooldown_active')
-        return
-    end
-
-    local itemConfig = getItemConfig(itemName)
-    if not itemConfig then
-        handleInvalidItem(src, 'item_missing')
-        return
-    end
-
+local function processBuy(player, itemName, itemConfig, amount)
     if not itemConfig.buy or not itemConfig.buy.enabled then
-        handleInvalidItem(src, 'item_disabled')
-        return
+        return false, Lang['item_disabled']
     end
 
     if not QBCore.Shared.Items[itemName] then
-        handleInvalidItem(src, 'item_invalid')
-        return
+        return false, Lang['item_invalid']
     end
 
     local totalPrice = calculatePrice(itemConfig, 'buy', amount)
     if not totalPrice then
-        handleInvalidItem(src, 'item_invalid')
-        return
+        return false, Lang['item_invalid']
     end
 
     local account = Config.UseCashForPurchases and 'cash' or 'bank'
     if player.Functions.GetMoney(account) < totalPrice then
-        handleInvalidItem(src, 'not_enough_money')
-        return
+        return false, Lang['not_enough_money']
     end
 
     if not player.Functions.RemoveMoney(account, totalPrice, 't1ger_pawnshop_purchase') then
-        handleInvalidItem(src, 'not_enough_money')
-        return
+        return false, Lang['not_enough_money']
     end
 
     if not player.Functions.AddItem(itemName, amount) then
         player.Functions.AddMoney(account, totalPrice, 't1ger_pawnshop_refund')
-        TriggerClientEvent('t1ger_pawnshop:notify', src, (Lang['inventory_full']):format(amount, itemConfig.label), 'error')
-        return
+        return false, (Lang['inventory_full']):format(amount, itemConfig.label)
     end
 
-    startCooldown(src)
-    TriggerClientEvent('t1ger_pawnshop:notify', src, (Lang['item_bought']):format(amount, itemConfig.label, formatCurrency(totalPrice)), 'success')
-end)
+    return true, (Lang['item_bought']):format(amount, itemConfig.label, formatCurrency(totalPrice))
+end
 
-RegisterNetEvent('t1ger_pawnshop:sellItem', function(itemName, amount)
-    local src = source
-    local player = QBCore.Functions.GetPlayer(src)
-    if not player then return end
-
-    if type(amount) ~= 'number' then
-        handleInvalidItem(src, 'invalid_amount')
-        return
-    end
-
-    amount = math.floor(amount)
-    if amount <= 0 then
-        handleInvalidItem(src, 'quantity_limit')
-        return
-    end
-
-    if isOnCooldown(src) then
-        handleInvalidItem(src, 'cooldown_active')
-        return
-    end
-
-    local itemConfig = getItemConfig(itemName)
-    if not itemConfig then
-        handleInvalidItem(src, 'item_missing')
-        return
-    end
-
+local function processSell(player, itemName, itemConfig, amount)
     if not itemConfig.sell or not itemConfig.sell.enabled then
-        handleInvalidItem(src, 'item_disabled')
-        return
+        return false, Lang['item_disabled']
     end
 
     if not QBCore.Shared.Items[itemName] then
-        handleInvalidItem(src, 'item_invalid')
-        return
+        return false, Lang['item_invalid']
     end
 
     local inventoryItem = player.Functions.GetItemByName(itemName)
     if not inventoryItem or inventoryItem.amount < amount then
-        handleInvalidItem(src, 'not_enough_items')
-        return
+        return false, Lang['not_enough_items']
     end
 
     if not player.Functions.RemoveItem(itemName, amount) then
-        handleInvalidItem(src, 'not_enough_items')
-        return
+        return false, Lang['not_enough_items']
     end
 
     local totalPrice = calculatePrice(itemConfig, 'sell', amount)
     if not totalPrice then
-        handleInvalidItem(src, 'item_invalid')
-        return
+        return false, Lang['item_invalid']
     end
 
     local account = Config.ReceiveCashOnSale and 'cash' or 'bank'
     player.Functions.AddMoney(account, totalPrice, 't1ger_pawnshop_sale')
 
-    startCooldown(src)
-    TriggerClientEvent('t1ger_pawnshop:notify', src, (Lang['item_sold']):format(amount, itemConfig.label, formatCurrency(totalPrice)), 'success')
+    return true, (Lang['item_sold']):format(amount, itemConfig.label, formatCurrency(totalPrice))
+end
+
+lib.callback.register('t1ger_pawnshop:processTransaction', function(source, data)
+    if type(data) ~= 'table' then return nil end
+
+    local action = data.action
+    local itemName = data.item
+    local amount = tonumber(data.amount)
+
+    if type(action) ~= 'string' or type(itemName) ~= 'string' or not amount then
+        return { success = false, message = Lang['invalid_amount'] }
+    end
+
+    amount = math.floor(amount)
+    if amount <= 0 then
+        return { success = false, message = Lang['quantity_limit'] }
+    end
+
+    local player = QBCore.Functions.GetPlayer(source)
+    if not player then
+        return { success = false, message = Lang['transaction_failed'] }
+    end
+
+    if isOnCooldown(source) then
+        return { success = false, message = Lang['cooldown_active'] }
+    end
+
+    local itemConfig = getItemConfig(itemName)
+    if not itemConfig then
+        return { success = false, message = Lang['item_missing'] }
+    end
+
+    local handlers = {
+        buy = processBuy,
+        sell = processSell
+    }
+
+    local handler = handlers[action]
+    if not handler then
+        return { success = false, message = Lang['transaction_failed'] }
+    end
+
+    local success, message = handler(player, itemName, itemConfig, amount)
+    if success then
+        startCooldown(source)
+        return { success = true, message = message }
+    end
+
+    return { success = false, message = message or Lang['transaction_failed'] }
 end)

@@ -136,6 +136,11 @@ function DrawText3Ds(x, y, z, text)
 end
 
 function LoadAnim(animDict)
+    if lib and lib.requestAnimDict then
+        lib.requestAnimDict(animDict)
+        return
+    end
+
     RequestAnimDict(animDict)
     while not HasAnimDictLoaded(animDict) do
         Wait(10)
@@ -143,6 +148,11 @@ function LoadAnim(animDict)
 end
 
 function LoadModel(model)
+    if lib and lib.requestModel then
+        lib.requestModel(model)
+        return
+    end
+
     RequestModel(model)
     while not HasModelLoaded(model) do
         Wait(10)

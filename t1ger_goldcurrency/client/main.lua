@@ -23,9 +23,10 @@ local OpenSmeltingFunction
 local OpenGoldExchangeFunction
 
 -- Job Config Data:
-RegisterNetEvent('t1ger_goldcurrency:updateConfigCL')
-AddEventHandler('t1ger_goldcurrency:updateConfigCL',function(data)
-    Config.GoldJobs = data
+RegisterNetEvent('t1ger_goldcurrency:setJobInUse', function(id, state)
+    id = tonumber(id)
+    if not id or not Config.GoldJobs[id] then return end
+    Config.GoldJobs[id].inUse = state and true or false
 end)
 
 local NPC = nil
@@ -84,34 +85,9 @@ AddEventHandler('t1ger_goldcurrency:createNPC', function(data)
     CreateJobNPC(data)
 end)
 
--- Get Available Gold Job
-function GetAvailableGoldJob(fees)
-    local id = math.random(1, #Config.GoldJobs)
-    local i = 0
-    while Config.GoldJobs[id].inUse and i < 100 do
-        i = i + 1
-        id = math.random(1, #Config.GoldJobs)
-    end
-    if i == 100 then
-        ShowNotify(Lang['no_jobs_available'], 'error')
-    else
-        Config.GoldJobs[id].inUse = true
-        TriggerServerEvent('t1ger_goldcurrency:updateConfigSV', Config.GoldJobs)
-        local ran_veh = math.random(1, #Config.JobVehicles)
-        local veh_model = Config.JobVehicles[ran_veh]
-        TriggerServerEvent('t1ger_goldcurrency:prepareJobSV', id, fees, veh_model)
-    end
-end
-
 -- Request Job From NPC:
 local interacting = false
 RequestJobFromNPC = function()
-    local cooldown = lib.callback.await('t1ger_goldcurrency:getJobCooldown', false)
-    if cooldown then
-        interacting = false
-        return
-    end
-
     local ped = getPlayerPed()
     if not ped then
         interacting = false
@@ -145,21 +121,14 @@ RequestJobFromNPC = function()
         return
     end
 
-    local hasMoney = lib.callback.await('t1ger_goldcurrency:getJobFees', false, Config.JobNPC.jobFees)
-    if not hasMoney then
-        ShowNotify(Lang['not_enough_money'], 'error')
+    local result = lib.callback.await('t1ger_goldcurrency:assignJob', false)
+    if not result or not result.success then
+        local message = result and result.message or Lang['no_jobs_available']
+        ShowNotify(message, 'error')
         interacting = false
         return
     end
 
-    local copsOnline = lib.callback.await('t1ger_goldcurrency:checkCops', false)
-    if not copsOnline then
-        ShowNotify(Lang['not_enough_cops'], 'error')
-        interacting = false
-        return
-    end
-
-    GetAvailableGoldJob(Config.JobNPC.jobFees)
     interacting = false
 end
 
@@ -221,9 +190,8 @@ local function resetJobEntities()
 end
 
 local function finalizeJob(messageKey, messageType)
-    if currentJobId and Config.GoldJobs[currentJobId] then
-        Config.GoldJobs[currentJobId].inUse = false
-        TriggerServerEvent('t1ger_goldcurrency:updateConfigSV', Config.GoldJobs)
+    if currentJobId then
+        TriggerServerEvent('t1ger_goldcurrency:releaseJob', currentJobId)
     end
     if messageKey and Lang[messageKey] then
         ShowNotify(Lang[messageKey], messageType or 'inform')

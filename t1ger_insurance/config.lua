@@ -29,7 +29,8 @@ Config.Insurance = {
                 managementAccount = 'insurance',         -- qb-management society account (set to false to disable deposits)
                 menu = {
                         keybind = 167,                   -- default F6
-                        command = 'insurance'
+                        command = 'insurance',
+                        defaultKey = 'F6'
                 }
         },
 

@@ -50,6 +50,7 @@ Lang = {
 
         -- Draw Texts
         ['draw_menu']                   = '~r~[E]~s~ Insurance Menu',
+        ['keybind_insurance_menu']      = 'Open insurance menu',
 
         -- Insurance Paper
         ['paper_title']                 = 'Insurance - %s',

@@ -3,12 +3,14 @@
 -------------------------------------
 
 local QBCore = exports['qb-core']:GetCoreObject()
+local targetEnabled = GetResourceState('ox_target') == 'started'
 
 local shops = {}
 local shopBlips = {}
 local isOwner = 0
 local shopID = 0
 local bossPoints, cashierPoints = {}, {}
+local bossTargetZones, cashierTargetZones = {}, {}
 local basket = { bill = 0, items = {}, shopID = 0 }
 
 local function resetBasket()
@@ -25,31 +27,53 @@ local function findStockItem(shopId, itemName)
         end
 end
 
-local function UpdateShopBlips()
-        for _, blip in pairs(shopBlips) do
-                RemoveBlip(blip)
+local function removeShopBlip(id)
+        if shopBlips[id] then
+                RemoveBlip(shopBlips[id])
+                shopBlips[id] = nil
         end
-        shopBlips = {}
-        for id, cfg in ipairs(Config.Shops) do
-                if cfg.b_menu then
-                        local labelPrefix = ''
-                        if cfg.owned and isOwner == cfg.data.id then
-                                labelPrefix = 'Your '
-                        end
-                        local mk = Config.BlipSettings[cfg.type]
-                        if mk and mk.enable then
-                                local blip = AddBlipForCoord(cfg.b_menu[1], cfg.b_menu[2], cfg.b_menu[3])
-                                SetBlipSprite(blip, mk.sprite)
-                                SetBlipDisplay(blip, mk.display)
-                                SetBlipScale(blip, mk.scale)
-                                SetBlipColour(blip, mk.color)
-                                SetBlipAsShortRange(blip, true)
-                                BeginTextCommandSetBlipName('STRING')
-                                AddTextComponentString(labelPrefix .. (mk.name or 'Shop'))
-                                EndTextCommandSetBlipName(blip)
-                                shopBlips[#shopBlips + 1] = blip
-                        end
-                end
+end
+
+local function updateShopBlip(id)
+        local cfg = Config.Shops[id]
+        if not cfg or not cfg.b_menu then
+                removeShopBlip(id)
+                return
+        end
+
+        local mk = Config.BlipSettings[cfg.type]
+        if not mk or not mk.enable then
+                removeShopBlip(id)
+                return
+        end
+
+        local labelPrefix = ''
+        if cfg.owned and isOwner == cfg.data.id then
+                labelPrefix = Lang['blip_owned_prefix'] or 'Your '
+        end
+
+        local coords = cfg.b_menu
+        removeShopBlip(id)
+        local blip = AddBlipForCoord(coords[1], coords[2], coords[3])
+        SetBlipSprite(blip, mk.sprite)
+        SetBlipDisplay(blip, mk.display)
+        SetBlipScale(blip, mk.scale)
+        SetBlipColour(blip, mk.color)
+        SetBlipAsShortRange(blip, true)
+        BeginTextCommandSetBlipName('STRING')
+        AddTextComponentString(labelPrefix .. (mk.name or 'Shop'))
+        EndTextCommandSetBlipName(blip)
+        shopBlips[id] = blip
+end
+
+local function UpdateShopBlips(targetId)
+        if targetId then
+                updateShopBlip(targetId)
+                return
+        end
+
+        for id = 1, #Config.Shops do
+                updateShopBlip(id)
         end
 end
 
@@ -57,6 +81,15 @@ local function removePoints(list)
         for _, point in pairs(list) do
                 if point and point.remove then
                         point:remove()
+                end
+        end
+end
+
+local function removeTargets(list)
+        for id, zone in pairs(list) do
+                if zone then
+                        exports.ox_target:removeZone(zone)
+                        list[id] = nil
                 end
         end
 end
@@ -97,6 +130,8 @@ end
 local function clearInteractionPoints()
         removePoints(bossPoints)
         removePoints(cashierPoints)
+        removeTargets(bossTargetZones)
+        removeTargets(cashierTargetZones)
         bossPoints, cashierPoints = {}, {}
 end
 
@@ -504,6 +539,31 @@ local function setupInteractionPoints()
                                         end
                                 end
                         })
+                        if targetEnabled then
+                                bossTargetZones[id] = exports.ox_target:addSphereZone({
+                                        coords = vec3(cfg.b_menu[1], cfg.b_menu[2], cfg.b_menu[3]),
+                                        radius = 1.5,
+                                        options = {
+                                                {
+                                                        name = ('t1ger_shops:boss:%s'):format(id),
+                                                        icon = 'fa-solid fa-store',
+                                                        label = Lang['target_boss'] or 'Shop management',
+                                                        onSelect = function()
+                                                                setupStockContexts(id)
+                                                                openBossMenu(id)
+                                                        end,
+                                                        canInteract = function()
+                                                                local cfg = Config.Shops[id]
+                                                                if not cfg then return false end
+                                                                if not cfg.owned then
+                                                                        return cfg.buyable ~= false
+                                                                end
+                                                                return isPlayerAuthorized(id)
+                                                        end
+                                                }
+                                        }
+                                })
+                        end
                 end
                 if cfg.cashier then
                         cashierPoints[id] = lib.points.new({
@@ -545,6 +605,22 @@ local function setupInteractionPoints()
                                         end
                                 end
                         })
+                        if targetEnabled then
+                                cashierTargetZones[id] = exports.ox_target:addSphereZone({
+                                        coords = vec3(cfg.cashier[1], cfg.cashier[2], cfg.cashier[3]),
+                                        radius = 1.5,
+                                        options = {
+                                                {
+                                                        name = ('t1ger_shops:cashier:%s'):format(id),
+                                                        icon = 'fa-solid fa-basket-shopping',
+                                                        label = Lang['target_cashier'] or 'Open shop',
+                                                        onSelect = function()
+                                                                openCashierMenu(id)
+                                                        end
+                                                }
+                                        }
+                                })
+                        end
                 end
         end
 end

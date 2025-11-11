@@ -152,31 +152,74 @@ local function notifyPlayer(player, message, type)
     TriggerClientEvent('t1ger_bankrobbery:notify', player.PlayerData.source, message, type)
 end
 
+local function getDutyCount(job)
+    if QBCore.Functions.GetDutyCount then
+        local count = QBCore.Functions.GetDutyCount(job)
+        return count or 0
+    end
+
+    local _, count = QBCore.Functions.GetPlayersByJob(job, true)
+    return count or 0
+end
+
 local function getOnlinePoliceCount()
-    local players = QBCore.Functions.GetQBPlayers()
     local count = 0
-    for _, player in pairs(players) do
-        if isPolice(player) then
-            count += 1
-        end
+    for jobName in pairs(copJobs) do
+        count += getDutyCount(jobName)
     end
     return count
 end
 
+local function refreshOnlinePolice()
+    local count = getOnlinePoliceCount()
+    if count ~= onlineCops then
+        onlineCops = count
+        updateOnlineCopsState()
+    end
+end
+
 CreateThread(function()
     Wait(1000)
-    onlineCops = getOnlinePoliceCount()
     refreshAllBankStates()
-    updateOnlineCopsState()
+    refreshOnlinePolice()
     print('^2[T1GER Bank Robbery]^0 Initialized')
 end)
 
-CreateThread(function()
-    while true do
-        onlineCops = getOnlinePoliceCount()
-        updateOnlineCopsState()
-        Wait(Config.FetchJobs * 1000)
+local function resolvePlayerFromEvent(data)
+    if type(data) == 'table' and data.PlayerData then
+        return data
     end
+    local src = tonumber(data) or source
+    if not src then return nil end
+    return QBCore.Functions.GetPlayer(src)
+end
+
+AddEventHandler('QBCore:Server:OnPlayerLoaded', function(player)
+    if not resolvePlayerFromEvent(player) then return end
+    refreshOnlinePolice()
+end)
+
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    if not resolvePlayerFromEvent(src) then return end
+    refreshOnlinePolice()
+end)
+
+AddEventHandler('playerDropped', function()
+    refreshOnlinePolice()
+end)
+
+AddEventHandler('QBCore:Server:OnJobUpdate', function(player, job)
+    local qbPlayer = resolvePlayerFromEvent(player)
+    if not qbPlayer then return end
+    qbPlayer.PlayerData.job = job or (qbPlayer.PlayerData and qbPlayer.PlayerData.job)
+    refreshOnlinePolice()
+end)
+
+AddEventHandler('QBCore:Server:SetPlayerJob', function(player, job)
+    local qbPlayer = resolvePlayerFromEvent(player)
+    if not qbPlayer then return end
+    qbPlayer.PlayerData.job = job or (qbPlayer.PlayerData and qbPlayer.PlayerData.job)
+    refreshOnlinePolice()
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:inUseSV', function(id, state)

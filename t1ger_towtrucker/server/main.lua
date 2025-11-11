@@ -23,7 +23,19 @@ local function getJobDetails(Player)
     if not job then return nil end
     local grade = job.grade
     local gradeLevel = type(grade) == 'table' and (grade.level or grade.grade) or grade
-    return job.name, gradeLevel or 0, job.isboss or false
+    local isBoss = false
+    if job.isBoss ~= nil then
+        isBoss = job.isBoss
+    elseif job.isboss ~= nil then
+        isBoss = job.isboss
+    elseif type(grade) == 'table' then
+        if grade.isBoss ~= nil then
+            isBoss = grade.isBoss
+        elseif grade.isboss ~= nil then
+            isBoss = grade.isboss
+        end
+    end
+    return job.name, gradeLevel or 0, isBoss
 end
 
 local function getServiceForJob(jobName)

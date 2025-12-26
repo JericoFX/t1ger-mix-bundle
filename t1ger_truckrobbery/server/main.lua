@@ -159,7 +159,8 @@ RegisterNetEvent('t1ger_truckrobbery:updateStage', function(jobId, stage)
     local citizenId = player.PlayerData.citizenid
     local job = activeJobs[citizenId]
     if not job or job.id ~= jobId then return end
-
+    if stage ~= 'truck_opened' then return end
+    if job.stage ~= 'assigned' then return end
     job.stage = stage
 end)
 

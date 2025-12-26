@@ -95,6 +95,68 @@ local function getBank(id)
     return bank
 end
 
+local securityConfig = Config.Security or {}
+local actionDistance = tonumber(securityConfig.ActionDistance) or 4.0
+local bankDistance = tonumber(securityConfig.BankDistance) or 60.0
+local eventCooldownMs = tonumber(securityConfig.EventCooldownMs) or 750
+local eventRateLimits = {}
+
+local function rateLimit(src, key)
+    local now = GetGameTimer()
+    eventRateLimits[src] = eventRateLimits[src] or {}
+    local last = eventRateLimits[src][key] or 0
+    if now - last < eventCooldownMs then
+        return false
+    end
+    eventRateLimits[src][key] = now
+    return true
+end
+
+local function getPlayerCoords(src)
+    local ped = GetPlayerPed(src)
+    if not ped or ped == 0 then return nil end
+    return GetEntityCoords(ped)
+end
+
+local function isNearCoords(src, coords, radius)
+    if not coords then return false end
+    local playerCoords = getPlayerCoords(src)
+    if not playerCoords then return false end
+    return #(playerCoords - coords) <= radius
+end
+
+local function getBankAnchor(bank)
+    if bank.blip and bank.blip.pos then
+        return bank.blip.pos
+    end
+    for _, keypad in pairs(bank.keypads or {}) do
+        if keypad.pos then
+            return keypad.pos
+        end
+    end
+    for _, door in pairs(bank.doors or {}) do
+        if door.pos then
+            return door.pos
+        end
+    end
+    return nil
+end
+
+local function isNearBank(src, bank, radius)
+    local anchor = bank and getBankAnchor(bank)
+    if not anchor then return false end
+    return isNearCoords(src, anchor, radius)
+end
+
+local function isNearAnyBank(src, radius)
+    for _, bank in pairs(Config.Banks or {}) do
+        if isNearBank(src, bank, radius) then
+            return true
+        end
+    end
+    return false
+end
+
 local function getItemLabel(item)
     local itemData = QBCore.Shared.Items[item]
     if itemData then
@@ -223,84 +285,122 @@ AddEventHandler('QBCore:Server:SetPlayerJob', function(player, job)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:inUseSV', function(id, state)
+    local src = source
+    if not rateLimit(src, 'inUse') then return end
     local bank = getBank(id)
     if not bank then return end
+    if not isNearBank(src, bank, bankDistance) then return end
     bank.inUse = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:keypadHackedSV', function(id, num, state)
+    local src = source
+    if not rateLimit(src, 'keypad') then return end
     local bank = getBank(id)
     if not bank then return end
     if not bank.keypads[num] then return end
+    if not isNearCoords(src, bank.keypads[num].pos, actionDistance) then return end
     bank.keypads[num].hacked = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:doorFreezeSV', function(id, num, state)
+    local src = source
+    if not rateLimit(src, 'door') then return end
     local bank = getBank(id)
     if not bank then return end
     if not bank.doors[num] then return end
+    if not isNearCoords(src, bank.doors[num].pos, actionDistance) then return end
     bank.doors[num].freeze = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:safeRobbedSV', function(id, num, state)
+    local src = source
+    if not rateLimit(src, 'safeRobbed') then return end
     local bank = getBank(id)
     if not bank then return end
     if not bank.safes[num] then return end
+    if not isNearCoords(src, bank.safes[num].pos, actionDistance) then return end
     bank.safes[num].robbed = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:safeFailedSV', function(id, num, state)
+    local src = source
+    if not rateLimit(src, 'safeFailed') then return end
     local bank = getBank(id)
     if not bank then return end
     if not bank.safes[num] then return end
+    if not isNearCoords(src, bank.safes[num].pos, actionDistance) then return end
     bank.safes[num].failed = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:powerBoxDisabledSV', function(id, state)
+    local src = source
+    if not rateLimit(src, 'powerBox') then return end
     local bank = getBank(id)
     if not bank or not bank.powerBox then return end
+    if not isNearCoords(src, bank.powerBox.pos, actionDistance) then return end
     bank.powerBox.disabled = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:pettyCashRobbedSV', function(id, num, state)
+    local src = source
+    if not rateLimit(src, 'pettyCash') then return end
     local bank = getBank(id)
     if not bank then return end
     local petty = bank.pettyCash[num]
     if not petty then return end
+    if not isNearCoords(src, petty.pos, actionDistance) then return end
     petty.robbed = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:safeCrackedSV', function(id, state)
+    local src = source
+    if not rateLimit(src, 'crackSafe') then return end
     local bank = getBank(id)
     if not bank or not bank.crackSafe then return end
+    if not isNearCoords(src, bank.crackSafe.pos, actionDistance) then return end
     bank.crackSafe.cracked = state
     setBankState(id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:openVaultSV', function(open, id)
+    local src = source
+    if not rateLimit(src, 'openVault') then return end
+    local bank = getBank(id)
+    if not bank then return end
+    if not isNearBank(src, bank, bankDistance) then return end
     TriggerClientEvent('t1ger_bankrobbery:openVaultCL', -1, open, id)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:setHeadingSV', function(id, type, heading)
+    local src = source
+    if not rateLimit(src, 'setHeading') then return end
     local bank = getBank(id)
     if not bank or not bank.doors[type] then return end
+    if not isNearCoords(src, bank.doors[type].pos, actionDistance) then return end
     bank.doors[type].setHeading = heading
     setBankState(id)
     TriggerClientEvent('t1ger_bankrobbery:setHeadingCL', -1, id, type, heading)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:particleFxSV', function(pos, dict, lib)
+    local src = source
+    if not rateLimit(src, 'particleFx') then return end
+    if not isNearAnyBank(src, bankDistance) then return end
     TriggerClientEvent('t1ger_bankrobbery:particleFxCL', -1, pos, dict, lib)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:modelSwapSV', function(pos, radius, oldModel, newModel)
+    local src = source
+    if not rateLimit(src, 'modelSwap') then return end
+    if not isNearAnyBank(src, bankDistance) then return end
     TriggerClientEvent('t1ger_bankrobbery:modelSwapCL', -1, pos, radius, oldModel, newModel)
 end)
 
@@ -318,6 +418,8 @@ RegisterNetEvent('t1ger_bankrobbery:removeRequiredItems', function(bankId, actio
     if not player or not bank then return end
     local requirements = bank.reqItems[action]
     if not requirements then return end
+    if not rateLimit(src, 'removeItems') then return end
+    if not isNearBank(src, bank, bankDistance) then return end
 
     for _, data in ipairs(requirements) do
         if data.remove then
@@ -335,6 +437,8 @@ RegisterNetEvent('t1ger_bankrobbery:safeReward', function(id, num)
     if not player or not bank then return end
     local safe = bank.safes[tonumber(num)]
     if not safe then return end
+    if not rateLimit(src, ('safeReward:%s'):format(num)) then return end
+    if not isNearCoords(src, safe.pos, actionDistance) then return end
     if not safe.robbed or safe.failed then return end
     if safe.rewarded then
         print(('[t1ger_bankrobbery] %s attempted duplicate safe reward'):format(src))
@@ -367,6 +471,8 @@ RegisterNetEvent('t1ger_bankrobbery:crackSafeReward', function(id)
     local bank = getBank(id)
     if not player or not bank or not bank.crackSafe then return end
     local data = bank.crackSafe
+    if not rateLimit(src, 'crackSafeReward') then return end
+    if not isNearCoords(src, data.pos, actionDistance) then return end
     if not data.cracked or data.rewarded then return end
     data.rewarded = true
     setBankState(id)
@@ -396,6 +502,8 @@ RegisterNetEvent('t1ger_bankrobbery:pettyCashReward', function(id, num)
     if not player or not bank then return end
     local petty = bank.pettyCash[tonumber(num)]
     if not petty or petty.robbed == nil then return end
+    if not rateLimit(src, ('pettyReward:%s'):format(num)) then return end
+    if not isNearCoords(src, petty.pos, actionDistance) then return end
     if petty.paid then return end
     petty.paid = true
     setBankState(id)
@@ -407,15 +515,25 @@ RegisterNetEvent('t1ger_bankrobbery:pettyCashReward', function(id, num)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:syncPowerBoxSV', function(timer)
+    local src = source
+    if not rateLimit(src, 'syncPowerBox') then return end
+    if not isNearAnyBank(src, bankDistance) then return end
     alertTime = timer
     TriggerClientEvent('t1ger_bankrobbery:syncPowerBoxCL', -1, alertTime)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:sendPoliceAlertSV', function(coords, message)
+    local src = source
+    if not rateLimit(src, 'policeAlert') then return end
+    if not isNearAnyBank(src, bankDistance) then return end
     TriggerClientEvent('t1ger_bankrobbery:sendPoliceAlertCL', -1, coords, message)
 end)
 
 RegisterNetEvent('t1ger_bankrobbery:ResetCurrentBankSV', function(id)
+    local src = source
+    if not rateLimit(src, 'resetBank') then return end
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player or not isPolice(player) then return end
     local bank = getBank(id)
     if not bank then return end
     bank.inUse = false

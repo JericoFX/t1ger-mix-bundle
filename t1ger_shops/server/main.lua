@@ -223,7 +223,7 @@ RegisterNetEvent('t1ger_shops:sellShop', function(shopId, sellPrice)
                 lib.logger(src, 'warn', ('Attempted to sell shop %s without ownership'):format(shopId))
                 return
         end
-        local amount = math.floor(sellPrice or 0)
+        local amount = math.floor((cfg.price or 0) * (Config.SalePercentage or 0))
         if amount < 0 then
                 lib.logger(src, 'warn', ('Invalid sell amount for shop %s: %s'):format(shopId, amount))
                 return

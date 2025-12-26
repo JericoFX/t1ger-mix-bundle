@@ -7,6 +7,21 @@ local exchangeCooldown = {}
 local jobCooldown = {}
 local jobStates = {}
 local activePlayerJobs = {}
+local pendingRefunds = {}
+local eventRateLimits = {}
+local eventCooldownMs = 750
+
+local function shouldProcessEvent(src, key)
+    if not src then return false end
+    local now = GetGameTimer()
+    eventRateLimits[src] = eventRateLimits[src] or {}
+    local last = eventRateLimits[src][key] or 0
+    if now - last < eventCooldownMs then
+        return false
+    end
+    eventRateLimits[src][key] = now
+    return true
+end
 
 local function getCitizenId(Player)
     return Player and Player.PlayerData and Player.PlayerData.citizenid
@@ -185,7 +200,11 @@ end)
 AddEventHandler('playerDropped', function()
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then return end
-    releaseJobForPlayer(getCitizenId(Player))
+    local identifier = getCitizenId(Player)
+    if identifier then
+        pendingRefunds[identifier] = nil
+    end
+    releaseJobForPlayer(identifier)
 end)
 
 lib.callback.register('t1ger_goldcurrency:assignJob', function(source)
@@ -255,6 +274,9 @@ RegisterNetEvent('t1ger_goldcurrency:giveJobReward', function()
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
+    local identifier = getCitizenId(Player)
+    if not identifier or not activePlayerJobs[identifier] then return end
+    if not shouldProcessEvent(src, 'jobReward') then return end
 
     for _, reward in ipairs(Config.JobReward) do
         if math.random(0, 100) <= reward.chance then
@@ -297,6 +319,14 @@ lib.callback.register('t1ger_goldcurrency:removeItem', function(source, item, am
     local invItem = Player.Functions.GetItemByName(item)
     if invItem and (invItem.amount or invItem.count or 0) >= quantity then
         Player.Functions.RemoveItem(item, quantity)
+        local identifier = getCitizenId(Player)
+        if identifier then
+            if item == Config.DatabaseItems['goldwatch'] and quantity == Config.SmelterySettings.input then
+                pendingRefunds[identifier] = { item = item, amount = quantity, type = 'smelt' }
+            elseif item == Config.DatabaseItems['goldbar'] and quantity == Config.ExchangeSettings.input then
+                pendingRefunds[identifier] = { item = item, amount = quantity, type = 'exchange' }
+            end
+        end
         return true
     end
     return false
@@ -308,11 +338,21 @@ lib.callback.register('t1ger_goldcurrency:addItem', function(source, item, amoun
     if type(item) ~= 'string' then return false end
     local quantity = tonumber(amount) or 0
     if quantity <= 0 then return false end
+    local identifier = getCitizenId(Player)
+    local pending = identifier and pendingRefunds[identifier]
+    if item == Config.DatabaseItems['goldbar'] and quantity == Config.SmelterySettings.output then
+        if not pending or pending.type ~= 'smelt' or pending.item ~= Config.DatabaseItems['goldwatch'] or pending.amount ~= Config.SmelterySettings.input then
+            return false
+        end
+    end
 
     local success = Player.Functions.AddItem(item, quantity)
     local label = getItemLabel(item)
     if success then
         notifyPlayer(source, (Lang['items_added']):format(quantity, label), 'success')
+        if identifier and pending and pending.type == 'smelt' then
+            pendingRefunds[identifier] = nil
+        end
         return true
     end
 
@@ -326,22 +366,38 @@ RegisterNetEvent('t1ger_goldcurrency:giveItem', function(item, amount)
     if type(item) ~= 'string' then return end
     local quantity = tonumber(amount) or 0
     if quantity <= 0 then return end
+    if not shouldProcessEvent(source, 'refundItem') then return end
+    local identifier = getCitizenId(Player)
+    local pending = identifier and pendingRefunds[identifier]
+    if not pending or pending.item ~= item or pending.amount ~= quantity then return end
+    pendingRefunds[identifier] = nil
     Player.Functions.AddItem(item, quantity)
 end)
 
 RegisterNetEvent('t1ger_goldcurrency:giveExchangeReward', function(amount, account)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then return end
-    local payout = tonumber(amount) or 0
-    if payout <= 0 then return end
-    giveFunds(Player, account or 'cash', payout, 'gold-currency-exchange')
+    if not shouldProcessEvent(source, 'exchangeReward') then return end
+    local identifier = getCitizenId(Player)
+    local pending = identifier and pendingRefunds[identifier]
+    if not pending or pending.type ~= 'exchange' then return end
+    local payout = Config.ExchangeSettings.money.amount
+    if type(payout) ~= 'number' or payout <= 0 then return end
+    local accountType = Config.ExchangeSettings.money.account or 'cash'
+    giveFunds(Player, accountType, payout, 'gold-currency-exchange')
     notifyPlayer(source, (Lang['money_received']):format(payout), 'success')
+    pendingRefunds[identifier] = nil
+    setCooldown(exchangeCooldown, identifier, Config.ExchangeSettings.cooldown or 0)
 end)
 
 RegisterNetEvent('t1ger_goldcurrency:addExchangeCooldown', function()
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then return end
-    setCooldown(exchangeCooldown, getCitizenId(Player), Config.ExchangeSettings.cooldown or 0)
+    local identifier = getCitizenId(Player)
+    if not identifier then return end
+    local pending = pendingRefunds[identifier]
+    if not pending or pending.type ~= 'exchange' then return end
+    setCooldown(exchangeCooldown, identifier, Config.ExchangeSettings.cooldown or 0)
 end)
 
 lib.callback.register('t1ger_goldcurrency:getExchangeCooldown', function(source)

@@ -19,6 +19,19 @@ local itemIcons = {
 }
 
 local activeMiningSpots = {}
+local pendingRewards = {}
+local rewardRateLimits = {}
+
+local function shouldProcessReward(src, key, cooldownMs)
+    local now = GetGameTimer()
+    rewardRateLimits[src] = rewardRateLimits[src] or {}
+    local last = rewardRateLimits[src][key] or 0
+    if now - last < cooldownMs then
+        return false
+    end
+    rewardRateLimits[src][key] = now
+    return true
+end
 
 local function releaseMiningSpot(playerId)
     if not playerId then return end
@@ -27,6 +40,7 @@ local function releaseMiningSpot(playerId)
     if not spotId then return end
 
     activeMiningSpots[playerId] = nil
+    pendingRewards[playerId] = nil
 
     if not Config.Mining[spotId] then return end
 
@@ -114,7 +128,15 @@ lib.callback.register('t1ger_minerjob:removeItem', function(source, item, amount
     if requiredAmount <= 0 then return false end
 
     if useOxInventory then
-        return exports.ox_inventory:RemoveItem(source, item, requiredAmount, nil, nil, false)
+        local removed = exports.ox_inventory:RemoveItem(source, item, requiredAmount, nil, nil, false)
+        if removed then
+            if item == Config.DatabaseItems['stone'] and requiredAmount == Config.WashSettings.input then
+                pendingRewards[source] = { type = 'wash' }
+            elseif item == Config.DatabaseItems['washed_stone'] and requiredAmount == Config.SmeltingSettings.input then
+                pendingRewards[source] = { type = 'smelt' }
+            end
+        end
+        return removed
     end
 
     local inventoryItem = Player.Functions.GetItemByName(item)
@@ -122,7 +144,15 @@ lib.callback.register('t1ger_minerjob:removeItem', function(source, item, amount
         return false
     end
 
-    return Player.Functions.RemoveItem(item, requiredAmount)
+    local removed = Player.Functions.RemoveItem(item, requiredAmount)
+    if removed then
+        if item == Config.DatabaseItems['stone'] and requiredAmount == Config.WashSettings.input then
+            pendingRewards[source] = { type = 'wash' }
+        elseif item == Config.DatabaseItems['washed_stone'] and requiredAmount == Config.SmeltingSettings.input then
+            pendingRewards[source] = { type = 'smelt' }
+        end
+    end
+    return removed
 end)
 
 RegisterNetEvent('t1ger_minerjob:mineSpotStateSV', function(id, state)
@@ -148,19 +178,32 @@ end)
 
 AddEventHandler('playerDropped', function()
     releaseMiningSpot(source)
+    pendingRewards[source] = nil
 end)
 
 RegisterNetEvent('QBCore:Server:OnPlayerDropped', function(playerId)
     releaseMiningSpot(playerId)
+    pendingRewards[playerId] = nil
 end)
 
 RegisterNetEvent('t1ger_minerjob:miningReward', function(item, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player or type(item) ~= 'string' then return end
+    if not shouldProcessReward(src, 'mining', 1500) then return end
+    if item ~= Config.DatabaseItems['stone'] then return end
+    local spotId = activeMiningSpots[src]
+    local spot = spotId and Config.Mining[spotId]
+    if not spot then return end
+    local ped = GetPlayerPed(src)
+    if not ped or ped == 0 then return end
+    local playerCoords = GetEntityCoords(ped)
+    local spotCoords = vector3(spot.pos[1], spot.pos[2], spot.pos[3])
+    if #(playerCoords - spotCoords) > 7.5 then return end
 
     local rewardAmount = ensureAmount(amount)
     if rewardAmount <= 0 then return end
+    if rewardAmount < Config.MiningReward.min or rewardAmount > Config.MiningReward.max then return end
 
     local success
     if useOxInventory then
@@ -180,9 +223,14 @@ RegisterNetEvent('t1ger_minerjob:washingReward', function(item, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player or type(item) ~= 'string' then return end
+    if not shouldProcessReward(src, 'washing', 1500) then return end
+    if item ~= Config.DatabaseItems['washed_stone'] then return end
+    local pending = pendingRewards[src]
+    if not pending or pending.type ~= 'wash' then return end
 
     local rewardAmount = ensureAmount(amount)
     if rewardAmount <= 0 then return end
+    if rewardAmount < Config.WashSettings.output.min or rewardAmount > Config.WashSettings.output.max then return end
 
     local success
     if useOxInventory then
@@ -192,6 +240,7 @@ RegisterNetEvent('t1ger_minerjob:washingReward', function(item, amount)
     end
 
     if success then
+        pendingRewards[src] = nil
         notifyWithItem(src, (Lang['stone_washed']):format(rewardAmount, getItemLabel(item)), 'success', item)
     else
         notify(src, Lang['inventory_full'], 'error')
@@ -202,6 +251,10 @@ RegisterNetEvent('t1ger_minerjob:smeltingReward', function()
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
+    if not shouldProcessReward(src, 'smelting', 1500) then return end
+    local pending = pendingRewards[src]
+    if not pending or pending.type ~= 'smelt' then return end
+    pendingRewards[src] = nil
 
     for _, reward in pairs(Config.SmeltingSettings.reward) do
         if type(reward) ~= 'table' then goto continue end

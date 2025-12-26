@@ -183,9 +183,13 @@ RegisterNetEvent('t1ger_towtrucker:sellTowService', function(id, val, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player or not playerOwnsService(Player, id) then return end
+    local service = Config.TowServices[id]
+    if not service then return end
+    local saleAmount = math.floor((service.price or 0) * (Config.SalePercentage or 0))
+    if saleAmount < 0 then saleAmount = 0 end
     MySQL.update.await('DELETE FROM t1ger_towtrucker WHERE id = ?', { id })
     local account = Config.BuyWithBank and 'bank' or 'cash'
-    Player.Functions.AddMoney(account, amount, 'tow-service-sale')
+    Player.Functions.AddMoney(account, saleAmount, 'tow-service-sale')
     Player.Functions.SetJob('unemployed', 0)
 end)
 
@@ -216,12 +220,21 @@ RegisterNetEvent('t1ger_towtrucker:releaseImpound', function(id, plate, props, o
     local impoundList = fetchImpound(id)
     for index, data in ipairs(impoundList) do
         if data.plate == plate then
+            local storedProps = data.props
+            if type(storedProps) == 'string' then
+                storedProps = json.decode(storedProps)
+            end
+            if type(storedProps) ~= 'table' then
+                storedProps = {}
+            end
             table.remove(impoundList, index)
             MySQL.update.await('UPDATE t1ger_towtrucker SET impound = ? WHERE id = ?', { json.encode(impoundList), id })
+            local vehicleOwner = data.owner
+            if not vehicleOwner then return end
             MySQL.update.await('UPDATE owned_vehicles SET vehicle = ?, tow_impound = 0 WHERE plate = ? AND owner = ?', {
-                json.encode(props),
+                json.encode(storedProps),
                 plate,
-                owner
+                vehicleOwner
             })
             TriggerClientEvent('t1ger_towtrucker:notify', src, Lang['veh_impound_released']:format(plate), 'success')
             return

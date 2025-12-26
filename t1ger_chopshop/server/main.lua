@@ -9,6 +9,18 @@ local scrapCooldown = {}
 local thiefCooldown = {}
 local activeThiefJobs = {}
 local processedScrapPlates = {}
+local rateLimits = {}
+
+local function rateLimit(src, key, cooldownMs)
+    local now = GetGameTimer()
+    rateLimits[src] = rateLimits[src] or {}
+    local last = rateLimits[src][key] or 0
+    if now - last < cooldownMs then
+        return false
+    end
+    rateLimits[src][key] = now
+    return true
+end
 
 local function logSecurityEvent(src, player, reason, details)
     local identifier = 'unknown'
@@ -184,6 +196,19 @@ RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
     local src = source
     local player = QBCore.Functions.GetPlayer(src)
     if not player or type(scrapCar) ~= 'table' or type(scrapCar.hash) ~= 'number' then return end
+    if not rateLimit(src, 'scrapPayment', 1000) then return end
+
+    local scrapPos = Config.ChopShop.ScrapNPC and Config.ChopShop.ScrapNPC.pos and Config.ChopShop.ScrapNPC.pos.veh
+    if scrapPos then
+        local ped = GetPlayerPed(src)
+        if not ped or ped == 0 then return end
+        local playerCoords = GetEntityCoords(ped)
+        local targetCoords = vector3(scrapPos[1], scrapPos[2], scrapPos[3])
+        if #(playerCoords - targetCoords) > 8.0 then
+            logSecurityEvent(src, player, 'scrap payment blocked (distance)', nil)
+            return
+        end
+    end
 
     percent = tonumber(percent) or 0
     percent = math.min(math.max(percent, 0), 100)
@@ -198,9 +223,11 @@ RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
     end
 
     local valid = false
+    local price = 0
     for _, car in ipairs(carList) do
         if car.hash == scrapCar.hash then
             valid = true
+            price = car.price or 0
             break
         end
     end
@@ -208,6 +235,7 @@ RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
         for _, car in ipairs(Config.ScrapVehicles) do
             if car.hash == scrapCar.hash then
                 valid = true
+                price = car.price or 0
                 break
             end
         end
@@ -215,7 +243,7 @@ RegisterNetEvent('t1ger_chopshop:getPayment', function(scrapCar, percent, plate)
     if not valid then return end
 
     local cfg = Config.ChopShop.Settings.scrap_rewards
-    local money = math.floor((scrapCar.price or 0) * (percent / 100))
+    local money = math.floor(price * (percent / 100))
     if cfg.cash.enable and money > 0 then
         addMoney(player, money, cfg.cash.dirty, 't1ger-chopshop-scrap')
         notify(src, Lang['cash_reward']:format(money), 'success')
@@ -304,7 +332,24 @@ function GetCopsCount()
 end
 
 RegisterNetEvent('t1ger_chopshop:syncDataSV', function(data)
-    TriggerClientEvent('t1ger_chopshop:syncDataCL', -1, data)
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return end
+    if not rateLimit(src, 'syncData', 1000) then return end
+    if not activeThiefJobs[src] then return end
+    if type(data) ~= 'table' then return end
+
+    for id, job in pairs(Config.ThiefJobs) do
+        local incoming = data[id]
+        if type(incoming) == 'table' then
+            job.inUse = incoming.inUse == true
+            job.goons_spawned = incoming.goons_spawned == true
+            job.veh_spawned = incoming.veh_spawned == true
+            job.player = incoming.player == true
+        end
+    end
+
+    TriggerClientEvent('t1ger_chopshop:syncDataCL', -1, Config.ThiefJobs)
 end)
 
 RegisterNetEvent('t1ger_chopshop:JobCompleteSV', function(payout, percent)

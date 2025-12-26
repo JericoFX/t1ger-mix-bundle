@@ -187,8 +187,45 @@ lib.callback.register('t1ger_garage:transferVehicle', function(source, data)
     return false, Lang['check_f8_console']
 end)
 
+local impoundRateLimit = {}
+local function isImpoundAuthorized(player, seized)
+    if not player or not player.PlayerData or not player.PlayerData.job then return false end
+    local jobName = player.PlayerData.job.name
+    if seized then
+        for _, job in ipairs(Config.Impound.Seize.jobs or {}) do
+            if job == jobName then
+                return true
+            end
+        end
+        return false
+    end
+    for _, job in ipairs(Config.Impound.Jobs or {}) do
+        if job == jobName then
+            return true
+        end
+    end
+    return false
+end
+
+local function rateLimitImpound(src)
+    local now = GetGameTimer()
+    local last = impoundRateLimit[src] or 0
+    if now - last < 1000 then
+        return false
+    end
+    impoundRateLimit[src] = now
+    return true
+end
+
 RegisterNetEvent('t1ger_garage:setVehicleImpounded', function(plate, props, fuel, garage, seized)
-    if not plate or not props then return end
+    local src = source
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player or not rateLimitImpound(src) then return end
+    if not plate or not props or type(props) ~= 'table' then return end
+    if not isImpoundAuthorized(player, seized) then return end
+    if props.plate and trim(props.plate) ~= trim(plate) then
+        return
+    end
     local update = MySQL.update.await(('UPDATE %s SET vehicle = ?, garage = ?, fuel = ?, state = 1, seized = ? WHERE plate = ? OR plate = ?'):format(VEHICLE_TABLE), {
         json.encode(props),
         garage or 'impound',
@@ -281,4 +318,3 @@ lib.callback.register('t1ger_garage:releaseImpoundedVehicle', function(source, d
         fuel = row.fuel or 0
     }
 end)
-

@@ -19,6 +19,19 @@ end
 local participants = {}
 local cooldown = { active = false, timer = 0 }
 local useOxInventory = GetResourceState('ox_inventory') == 'started'
+local pendingDrillRefund = {}
+local actionRateLimits = {}
+
+local function rateLimit(src, key, cooldownMs)
+        local now = GetGameTimer()
+        actionRateLimits[src] = actionRateLimits[src] or {}
+        local last = actionRateLimits[src][key] or 0
+        if now - last < cooldownMs then
+                return false
+        end
+        actionRateLimits[src][key] = now
+        return true
+end
 
 local function syncState(target)
         if target then
@@ -43,6 +56,7 @@ local function resetHeist()
         heistState.trolley.taken = false
         resetSafes()
         participants = {}
+        pendingDrillRefund = {}
 end
 
 local function isParticipant(source)
@@ -191,6 +205,9 @@ end)
 RegisterNetEvent('t1ger_yachtheist:setKeypadState', function(state)
         local src = source
         if not heistState.terminal.activated then return end
+        if not isParticipant(src) then return end
+        if not rateLimit(src, 'keypad', 750) then return end
+        if state ~= true or heistState.keypad.hacked then return end
         heistState.keypad.hacked = state and true or false
         registerParticipant(src)
         syncState()
@@ -199,6 +216,8 @@ end)
 RegisterNetEvent('t1ger_yachtheist:setTrolleyState', function(field, value)
         if field ~= 'grabbing' and field ~= 'taken' then return end
         if not heistState.terminal.activated then return end
+        if not isParticipant(source) then return end
+        if not rateLimit(source, 'trolley', 750) then return end
         heistState.trolley[field] = value and true or false
         registerParticipant(source)
         syncState()
@@ -208,14 +227,19 @@ RegisterNetEvent('t1ger_yachtheist:SafeDataSV', function(type, id, state)
         local src = source
         local safe = heistState.safes[id]
         if not safe then return end
+        if not isParticipant(src) then return end
+        if not rateLimit(src, ('safe:%s'):format(id), 750) then return end
         if type == 'robbed' and not safe.robbed then
+                if state ~= true then return end
                 safe.robbed = state and true or false
                 safe.rewarded = false
                 registerParticipant(src)
                 TriggerClientEvent('t1ger_yachtheist:SafeDataCL', -1, 'robbed', id, safe.robbed)
                 syncState()
         elseif type == 'failed' and not safe.failed then
+                if state ~= true then return end
                 safe.failed = state and true or false
+                pendingDrillRefund[src] = true
                 TriggerClientEvent('t1ger_yachtheist:SafeDataCL', -1, 'failed', id, safe.failed)
                 syncState()
         end
@@ -225,6 +249,8 @@ RegisterNetEvent('t1ger_yachtheist:vaultReward', function(id)
         local src = source
         local player = QBCore.Functions.GetPlayer(src)
         if not player then return end
+        if not isParticipant(src) then return end
+        if not rateLimit(src, 'vaultReward', 1000) then return end
         local safe = heistState.safes[id]
         if not safe or not safe.robbed or safe.rewarded then return end
         registerParticipant(src)
@@ -251,7 +277,13 @@ end)
 RegisterNetEvent('t1ger_yachtheist:giveItem', function(item, amount)
         local player = QBCore.Functions.GetPlayer(source)
         if not player then return end
-        player.Functions.AddItem(item, amount or 1)
+        if not isParticipant(source) then return end
+        if not rateLimit(source, 'giveItem', 1000) then return end
+        local expectedItem = Config.DatabaseItems and Config.DatabaseItems['drill']
+        if item ~= expectedItem or (amount or 1) ~= 1 then return end
+        if not pendingDrillRefund[source] then return end
+        pendingDrillRefund[source] = nil
+        player.Functions.AddItem(item, 1)
 end)
 
 RegisterNetEvent('t1ger_yachtheist:resetHeistSV', function()
@@ -270,6 +302,7 @@ end)
 
 RegisterNetEvent('t1ger_yachtheist:PoliceNotifySV', function(type)
         if not Config.PoliceSettings.enableAlert then return end
+        if not isParticipant(source) and not playerHasJob(source, Config.PoliceSettings.jobs) then return end
         if type == 'alert' then
                 TriggerClientEvent('t1ger_yachtheist:PoliceNotifyCL', -1, Lang['police_notify'])
         elseif type == 'secure' then
